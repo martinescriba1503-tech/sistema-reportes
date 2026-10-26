@@ -1,0 +1,2350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>INDUSTRAC S.A.C. — Sistema Inteligente de Reportes Técnicos</title>
+  
+  <!-- Modern Industrial Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       App Header & Corporate Branding
+       ======================================================================== -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-wrapper">
+        <!-- SVG Corporate Logo: Industrial Compressor Screw & Waves -->
+        <svg class="brand-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="100" height="100" rx="20" fill="#031240" />
+          <!-- Inner Turbine / Screw Chevron -->
+          <path d="M56 26L78 48L56 70L46 60L58 48L46 36L56 26Z" fill="#18A2D9" />
+          <path d="M40 32L58 48L40 64L30 55L39 48L30 41L40 32Z" fill="#14B5D9" />
+          <circle cx="28" cy="28" r="4" fill="#FFFFFF" opacity="0.8" />
+        </svg>
+        <div class="brand-text">
+          <h1>INDUSTRAC <span>S.A.C.</span></h1>
+          <p>Compresores de Aire &amp; Servicios Industriales</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs">
+        <button type="button" class="nav-tab-btn active" data-tab="tab-report">
+          <span>📝</span> Reporte Actual
+        </button>
+        <button type="button" class="nav-tab-btn" data-tab="tab-history">
+          <span>📋</span> Historial
+        </button>
+        <button type="button" class="nav-tab-btn" data-tab="tab-equipments">
+          <span>⚙️</span> Catálogo Equipos
+        </button>
+        <button type="button" class="nav-tab-btn" data-tab="tab-plans">
+          <span>🛠️</span> Planes Mant.
+        </button>
+        <button type="button" class="nav-tab-btn" data-tab="tab-horometers">
+          <span>⏱️</span> Horómetros
+        </button>
+      </nav>
+
+      <div style="display: flex; align-items: center; gap: 0.65rem;">
+        <button type="button" class="btn btn-sm btn-outline-success" onclick="window.app.openGoogleSheetsModal()" style="display: flex; align-items: center; gap: 0.35rem; font-weight: 600; padding: 0.35rem 0.75rem; border-radius: var(--radius-sm);" title="Configuración de Google Sheets & Google Drive">
+          <span>📊</span> Google Sheets / Drive
+        </button>
+        <!-- Sync / Auto-save Indicator -->
+        <div id="sync-status-indicator" class="header-status-badge">
+          <span class="status-dot"></span> Sincronizado
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       Main Content Container
+       ======================================================================== -->
+  <main class="main-container">
+
+    <!-- ======================================================================
+         TAB 1: Formulario de Reporte Técnico (Pasos 1 al 9)
+         ====================================================================== -->
+    <section id="tab-report" class="tab-content active">
+
+      <!-- Stepper Navigation Header -->
+      <div class="stepper-card">
+        <div class="stepper-progress-wrapper">
+          <div class="stepper-progress-info">
+            <span id="step-counter-text">Paso 1 de 9 (11%)</span>
+            <span>Mantenimiento de Compresores</span>
+          </div>
+          <div class="stepper-progress-bar-bg">
+            <div id="progress-bar-fill" class="stepper-progress-bar-fill"></div>
+          </div>
+        </div>
+
+        <div class="stepper-list">
+          <button type="button" class="stepper-step active" data-step="1">
+            <div class="step-circle">1</div>
+            <span class="step-label">Datos Generales</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="2">
+            <div class="step-circle">2</div>
+            <span class="step-label">Trabajos Mecánicos</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="3">
+            <div class="step-circle">3</div>
+            <span class="step-label">Mediciones Eléc.</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="4">
+            <div class="step-circle">4</div>
+            <span class="step-label">Secador</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="5">
+            <div class="step-circle">5</div>
+            <span class="step-label">Parámetros</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="6">
+            <div class="step-circle">6</div>
+            <span class="step-label">Observaciones</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="7">
+            <div class="step-circle">7</div>
+            <span class="step-label">Fotografías</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="8">
+            <div class="step-circle">8</div>
+            <span class="step-label">Firmas</span>
+          </button>
+          <button type="button" class="stepper-step" data-step="9">
+            <div class="step-circle">9</div>
+            <span class="step-label">Revisión &amp; PDF</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Form Wrapper -->
+      <form id="report-form" onsubmit="return false;">
+
+        <!-- ------------------------------------------------------------------
+             PASO 1: DATOS GENERALES Y EQUIPO
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-1" class="form-step-pane active">
+          
+          <!-- Equipment Two-Step Selector Banner -->
+          <div class="autofill-banner">
+            <div class="autofill-info">
+              <span class="autofill-icon">⚙️</span>
+              <div>
+                <h4>Selección de Compresor desde Catálogo</h4>
+                <p>Seleccione el cliente y luego la máquina intervenida para autocompletar sus especificaciones e historial.</p>
+              </div>
+            </div>
+            <div class="autofill-two-step">
+              <div class="autofill-select-row">
+                <div class="autofill-field">
+                  <label for="report-client-select">1. Seleccionar Cliente:</label>
+                  <select id="report-client-select" class="form-control">
+                    <option value="">-- Elija un Cliente del Catálogo --</option>
+                  </select>
+                </div>
+                <div class="autofill-field">
+                  <label for="report-equipment-select">2. Seleccionar Compresor:</label>
+                  <select id="report-equipment-select" class="form-control" disabled>
+                    <option value="">-- Primero elija un cliente --</option>
+                  </select>
+                </div>
+              </div>
+              <div id="equipment-selected-tag" class="equipment-selected-tag" style="display: none;">
+                <div>
+                  <span class="api-code-badge demo-code" id="tag-selected-api-code">-</span>
+                  <span style="margin-left: 0.5rem; font-weight: 600;" id="tag-selected-info">-</span>
+                </div>
+                <button type="button" class="btn-clear-selection" title="Desvincular máquina del reporte" onclick="window.app.clearEquipmentSelection()">✕ Desvincular</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">📋</span>
+                <div>
+                  <h2>Paso 1: Datos Generales del Servicio</h2>
+                  <p>Información del cliente, ubicación, técnico y especificaciones base del compresor.</p>
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="window.app.startNewReport()">
+                ＋ Iniciar Nuevo Reporte
+              </button>
+            </div>
+
+            <div class="form-grid-3">
+              <!-- Fecha -->
+              <div class="form-group">
+                <div class="date-label-row">
+                  <label class="form-label label-required" for="field-date">Fecha del Servicio</label>
+                  <button type="button" id="btn-set-date-today" class="btn-date-today" title="Hacer clic para poner la fecha de hoy">
+                    📅 Hoy
+                  </button>
+                </div>
+                <input type="date" id="field-date" class="form-control" required />
+              </div>
+
+              <!-- N° de Reporte / Cotización -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-report-number">
+                  Número de Reporte / Cotización
+                  <span class="form-hint" style="color: var(--color-primary); font-weight: 600;">(Correlativo Automático)</span>
+                </label>
+                <div style="position: relative;">
+                  <input type="text" id="field-report-number" class="form-control" value="REP-2026-..." readonly style="background-color: #F8FAFC; font-weight: 700; color: #0F172A; letter-spacing: 0.5px; border-color: #CBD5E1; cursor: not-allowed; padding-right: 85px;" />
+                  <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 0.72rem; background: #EEF2FF; color: #4338CA; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #C7D2FE;">
+                    🔒 OFICIAL
+                  </span>
+                </div>
+              </div>
+
+              <!-- Tipo de Servicio -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-service-type">Tipo de Servicio</label>
+                <select id="field-service-type" class="form-control" required>
+                  <option value="Mantenimiento" selected>Mantenimiento</option>
+                  <option value="Arranque inicial">Arranque inicial</option>
+                  <option value="Evaluación">Evaluación</option>
+                  <option value="Reparación">Reparación</option>
+                  <option value="Asesoría">Asesoría</option>
+                </select>
+              </div>
+
+              <!-- Cliente / Compañía -->
+              <div class="form-group span-2">
+                <label class="form-label label-required" for="field-client">Compañía o Cliente</label>
+                <input type="text" id="field-client" class="form-control" placeholder="Ej: ALICORP S.A.A." required />
+              </div>
+
+              <!-- Técnico responsable -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-technician">Ingeniero o Técnico Responsable</label>
+                <select id="field-technician" class="form-control" required>
+                  <option value="" disabled selected>-- Seleccione Técnico Responsable --</option>
+                  <option value="GINO GREGORIO SILVA CLEMENTE">GINO GREGORIO SILVA CLEMENTE</option>
+                  <option value="ABEL ELIAS LUNA YSIDRO">ABEL ELIAS LUNA YSIDRO</option>
+                  <option value="CARLOS GIOVANNY OJEDA CAMARGO">CARLOS GIOVANNY OJEDA CAMARGO</option>
+                </select>
+              </div>
+
+              <!-- Dirección del servicio -->
+              <div class="form-group span-3">
+                <label class="form-label" for="field-address">Dirección del Servicio / Planta</label>
+                <input type="text" id="field-address" class="form-control" placeholder="Ej: Av. Argentina 4793, Callao" />
+              </div>
+            </div>
+
+            <div style="margin: 1.5rem 0 1rem; border-top: 1px dashed var(--color-border); padding-top: 1.25rem;">
+              <h3 style="font-size: 1rem; font-weight: 700; color: var(--color-primary-dark); margin-bottom: 1rem;">
+                ⚙️ Especificaciones Técnicas del Compresor
+              </h3>
+            </div>
+
+            <div class="form-grid-3">
+              <!-- Hidden Equipment ID -->
+              <input type="hidden" id="field-equipment-id" />
+
+              <!-- API / ID Máquina -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-api-code">
+                  API / ID Máquina
+                </label>
+                <input type="text" id="field-api-code" class="form-control" placeholder="Ej: DEMO-CDS-001" required />
+              </div>
+
+              <!-- Modelo del compresor -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-model">Modelo del Compresor</label>
+                <input type="text" id="field-model" class="form-control" placeholder="Ej: GA 37 VSD+" required />
+              </div>
+
+              <!-- Tipo de Módulo o Controlador -->
+              <div class="form-group">
+                <label class="form-label" for="field-controller">Tipo de Controlador</label>
+                <input type="text" id="field-controller" class="form-control" placeholder="Ej: Elektronikon Touch" />
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+
+              <!-- Presión -->
+              <div class="form-group">
+                <label class="form-label" for="field-pressure">Presión Nominal / Setpoint</label>
+                <div class="input-with-unit">
+                  <input type="text" id="field-pressure" class="form-control" placeholder="7.5" />
+                  <span class="input-unit-badge">bar</span>
+                </div>
+              </div>
+
+              <!-- Caudal -->
+              <div class="form-group">
+                <label class="form-label" for="field-airflow">Caudal</label>
+                <div class="input-with-unit">
+                  <input type="text" id="field-airflow" class="form-control" placeholder="6.8" />
+                  <span class="input-unit-badge">m³/min</span>
+                </div>
+              </div>
+
+              <!-- Horómetro -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-hourmeter">Horómetro Total</label>
+                <div class="input-with-unit">
+                  <input type="number" id="field-hourmeter" class="form-control" placeholder="4050" required />
+                  <span class="input-unit-badge">hrs</span>
+                </div>
+              </div>
+
+              <!-- Tipo de Mantenimiento -->
+              <div class="form-group">
+                <label class="form-label label-required" for="maintenance-type-select">Tipo de Mantenimiento</label>
+                <select id="maintenance-type-select" class="form-control" required>
+                  <option value="Plan A — 2000 horas" selected>Plan A — 2000 horas</option>
+                  <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
+                  <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
+                  <option value="Overhaul">Overhaul</option>
+                  <option value="Correctivo">Correctivo</option>
+                  <option value="Otro">Otro</option>
+                </select>
+                <span class="form-hint">Carga automáticamente los repuestos y tareas en el Paso 2.</span>
+              </div>
+
+              <!-- Tipo de Aceite -->
+              <div class="form-group">
+                <label class="form-label" for="oil-type-select">Tipo de Aceite Utilizado</label>
+                <select id="oil-type-select" class="form-control">
+                  <option value="Roto Xtend (20 L)">Roto Xtend (Presentación 20 L)</option>
+                  <option value="Roto Xtend (5 L)">Roto Xtend (Presentación 5 L)</option>
+                  <option value="Ndurance (Presentación 5 L)" selected>Ndurance (Presentación 5 L)</option>
+                  <option value="Ndurance de 20L">Ndurance de 20L</option>
+                  <option value="Sigma 5GAL">Sigma 5GAL</option>
+                  <option value="Sigma 1GAL">Sigma 1GAL</option>
+                  <option value="Roto-Inject">Roto-Inject</option>
+                  <option value="Otro">Otro (Especificar)</option>
+                </select>
+              </div>
+
+              <!-- Criterio de Nivel de Aceite -->
+              <div class="form-group">
+                <label class="form-label label-required" for="field-oil-level">
+                  Nivel de Aceite
+                  <span class="form-hint">(Inspección en visor)</span>
+                </label>
+                <input type="hidden" id="field-oil-level" value="Alto" />
+                <div class="oil-level-selector" id="oil-level-selector-step1">
+                  <button type="button" class="oil-level-btn level-bajo" data-level="Bajo" onclick="window.app.setOilLevel('Bajo')">
+                    <span class="level-indicator"></span> Bajo
+                  </button>
+                  <button type="button" class="oil-level-btn level-medio" data-level="Medio" onclick="window.app.setOilLevel('Medio')">
+                    <span class="level-indicator"></span> Medio
+                  </button>
+                  <button type="button" class="oil-level-btn level-alto active" data-level="Alto" onclick="window.app.setOilLevel('Alto')">
+                    <span class="level-indicator"></span> Alto
+                  </button>
+                </div>
+              </div>
+
+              <!-- Campo otro aceite -->
+              <div id="custom-oil-group" class="form-group" style="display: none;">
+                <label class="form-label" for="field-custom-oil">Descripción de Aceite Personalizado</label>
+                <input type="text" id="field-custom-oil" class="form-control" placeholder="Especifique marca y viscosidad" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 2: TRABAJOS MECÁNICOS
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-2" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">🔧</span>
+                <div>
+                  <h2>Paso 2: Trabajos Mecánicos y Repuestos</h2>
+                  <p>Repuestos e insumos cargados automáticamente según el plan configurado y protocolo de ejecución técnica.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dynamic Suggestion Alert Banner -->
+            <div class="tasks-suggestion-alert">
+              <svg fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+              </svg>
+              <p id="tasks-suggestion-text">
+                Tareas sugeridas según plan aplicadas. Puede marcar o desmarcar según la ejecución real en campo.
+              </p>
+            </div>
+
+            <!-- Repuestos e Insumos Cargados Automáticamente -->
+            <div id="auto-loaded-parts-box" class="auto-loaded-parts-box" style="margin-bottom: 1.25rem;">
+              <!-- Rendered dynamically by app.js -->
+            </div>
+
+            <!-- Tasks Checkbox Grid -->
+            <div id="tasks-checkbox-grid" class="tasks-grid">
+              <!-- Rendered dynamically by app.js -->
+            </div>
+
+            <!-- Additional Mechanical Works & Pending Justification -->
+            <div class="form-grid-2" style="margin-top: 1rem;">
+              <div class="form-group">
+                <label class="form-label" for="field-other-tasks">Descripción de Otros Trabajos Efectuados</label>
+                <textarea id="field-other-tasks" class="form-control" rows="3" placeholder="Detalle cualquier intervención o ajuste mecánico adicional realizado..."></textarea>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="field-pending-tasks-reason">
+                  Justificación de Tareas Programadas Pendientes
+                  <span class="form-hint">(Si alguna tarea no se ejecutó)</span>
+                </label>
+                <textarea id="field-pending-tasks-reason" class="form-control" rows="3" placeholder="Ej: No se cambió filtro separador por stock en planta del cliente; programado para siguiente visita..."></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 3: MEDICIONES ELÉCTRICAS Y MOTORES
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-3" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">⚡</span>
+                <div>
+                  <h2>Paso 3: Mediciones Eléctricas</h2>
+                  <p>Registre lecturas de voltaje, corrientes y parámetros de los motores en campo (opcional).</p>
+                </div>
+              </div>
+
+              <!-- Switch Mediciones Eléctricas -->
+              <label class="switch-wrapper">
+                <div class="switch">
+                  <input type="checkbox" id="has-electrical-toggle" />
+                  <span class="slider"></span>
+                </div>
+                <span style="font-weight: 700; font-size: 0.9rem; color: var(--color-primary-dark);">
+                  ¿Registrar Mediciones Eléctricas?
+                </span>
+              </label>
+            </div>
+
+            <!-- Fields Container (hidden by default) -->
+            <div id="electrical-fields-section" style="display: none;">
+
+            <!-- Voltajes -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Voltajes de Línea</h3>
+                <button type="button" class="btn-pill-na" data-target="elec-u1-u2,elec-u2-u3,elec-u1-u3">No Medido / NA</button>
+              </div>
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="elec-u1-u2">UL1 - UL2</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-u1-u2" class="form-control" placeholder="460" />
+                    <span class="input-unit-badge">V</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-u2-u3">UL2 - UL3</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-u2-u3" class="form-control" placeholder="460" />
+                    <span class="input-unit-badge">V</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-u1-u3">UL1 - UL3</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-u1-u3" class="form-control" placeholder="460" />
+                    <span class="input-unit-badge">V</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Amperajes -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Amperajes de Línea y Fusibles</h3>
+                <button type="button" class="btn-pill-na" data-target="elec-i-l1,elec-i-l2,elec-i-l3,elec-f1,elec-f2,elec-f3">No Medido / NA</button>
+              </div>
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="elec-i-l1">Corriente L1</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-i-l1" class="form-control" placeholder="48.2" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-i-l2">Corriente L2</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-i-l2" class="form-control" placeholder="48.5" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-i-l3">Corriente L3</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-i-l3" class="form-control" placeholder="47.9" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-f1">Fusible F1</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-f1" class="form-control" placeholder="63" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-f2">Fusible F2</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-f2" class="form-control" placeholder="63" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="elec-f3">Fusible F3</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="elec-f3" class="form-control" placeholder="63" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Línea de tierra -->
+              <div class="form-group" style="margin-top: 0.85rem;">
+                <label class="form-label" for="elec-ground">Línea de Tierra (Lectura / Continuidad)</label>
+                <input type="text" id="elec-ground" class="form-control" placeholder="Ej: 0.8 Ω - Continuidad conforme" />
+              </div>
+            </div>
+
+            <!-- Motor Eléctrico Principal -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Motor Eléctrico Principal</h3>
+                <button type="button" class="btn-pill-na" data-target="motor-brand,motor-voltage,motor-amperage,motor-fs,motor-protection">No Aplica</button>
+              </div>
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="motor-brand">Marca / Identificación</label>
+                  <input type="text" id="motor-brand" class="form-control" placeholder="Ej: WEG W22 Premium" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="motor-voltage">Voltaje</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="motor-voltage" class="form-control" placeholder="460" />
+                    <span class="input-unit-badge">V</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="motor-amperage">Amperaje Placa / Medido</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="motor-amperage" class="form-control" placeholder="55.0" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="motor-fs">Factor de Servicio (FS)</label>
+                  <input type="text" id="motor-fs" class="form-control" value="1.15" />
+                </div>
+                <div class="form-group span-2">
+                  <label class="form-label" for="motor-protection">Tipo de Protección (P.T.)</label>
+                  <input type="text" id="motor-protection" class="form-control" value="IP55 / Termistores PTC" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Motor Ventilador -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Motor Ventilador</h3>
+                <button type="button" class="btn-pill-na" data-target="fan-voltage,fan-amperage,fan-fs,fan-protection">No Aplica</button>
+              </div>
+              <div class="form-grid-4">
+                <div class="form-group">
+                  <label class="form-label" for="fan-voltage">Voltaje</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="fan-voltage" class="form-control" placeholder="460" />
+                    <span class="input-unit-badge">V</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="fan-amperage">Amperaje</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="fan-amperage" class="form-control" placeholder="3.2" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="fan-fs">Factor de Servicio</label>
+                  <input type="text" id="fan-fs" class="form-control" value="1.0" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="fan-protection">Protección</label>
+                  <input type="text" id="fan-protection" class="form-control" value="IP54" />
+                </div>
+              </div>
+            </div>
+            </div>
+
+            <!-- Notice when disabled -->
+            <div id="no-electrical-notice" style="text-align: center; padding: 2.5rem; color: #94A3B8;">
+              ⚡ Si este servicio no requiere registrar mediciones eléctricas ni parámetros de motores, mantenga el switch desactivado para omitirlos del informe PDF.
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 4: DATOS DEL SECADOR
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-4" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">❄️</span>
+                <div>
+                  <h2>Paso 4: Datos del Secador de Aire</h2>
+                  <p>Active esta sección si el compresor opera con secador de aire refrigerativo o desecante.</p>
+                </div>
+              </div>
+
+              <!-- Switch -->
+              <label class="switch-wrapper">
+                <div class="switch">
+                  <input type="checkbox" id="has-dryer-toggle" />
+                  <span class="slider"></span>
+                </div>
+                <span style="font-weight: 700; font-size: 0.9rem; color: var(--color-primary-dark);">
+                  ¿Incluye Secador de Aire?
+                </span>
+              </label>
+            </div>
+
+            <!-- Fields Container (hidden by default) -->
+            <div id="dryer-fields-section" style="display: none;">
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="dryer-model">Modelo del Secador</label>
+                  <input type="text" id="dryer-model" class="form-control" placeholder="Ej: FD 120" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="dryer-serial">Número de Serie</label>
+                  <input type="text" id="dryer-serial" class="form-control" placeholder="Ej: FD-99412" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="dryer-dewpoint">Punto de Rocío (Dew Point)</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="dryer-dewpoint" class="form-control" placeholder="3" />
+                    <span class="input-unit-badge">°C</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="dryer-voltage">Voltaje</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="dryer-voltage" class="form-control" placeholder="220" />
+                    <span class="input-unit-badge">V</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="dryer-amperage">Amperaje</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="dryer-amperage" class="form-control" placeholder="4.5" />
+                    <span class="input-unit-badge">A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="dryer-refrigerant">Tipo de Refrigerante</label>
+                  <input type="text" id="dryer-refrigerant" class="form-control" value="R134a" placeholder="R134a, R404A, etc." />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="dryer-protection">Protección</label>
+                  <input type="text" id="dryer-protection" class="form-control" value="IP54 / Presostatos OK" />
+                </div>
+                <div class="form-group span-2">
+                  <label class="form-label" for="dryer-cleaning">Estado de Limpieza / Condensador</label>
+                  <input type="text" id="dryer-cleaning" class="form-control" value="Limpio / Sopleteado conforme" />
+                </div>
+              </div>
+            </div>
+
+            <div id="no-dryer-notice" style="text-align: center; padding: 2rem; color: #94A3B8;">
+              ℹ️ Si el compresor no cuenta con secador o no forma parte del servicio, mantenga el switch desactivado.
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 5: PARÁMETROS TÉCNICOS
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-5" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">📊</span>
+                <div>
+                  <h2>Paso 5: Parámetros Técnicos y Regulaciones</h2>
+                  <p>Vidas de servicio programadas, puntos de regulación y mediciones termodinámicas.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Vida de servicios programados -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Vida de Servicios Programados</h3>
+              </div>
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="life-oil">Vida del Aceite</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="life-oil" class="form-control" placeholder="4000" />
+                    <span class="input-unit-badge">hrs</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="life-oil-filter">Vida del Filtro de Aceite</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="life-oil-filter" class="form-control" placeholder="4000" />
+                    <span class="input-unit-badge">hrs</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="life-air-filter">Vida del Filtro de Aire</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="life-air-filter" class="form-control" placeholder="2000" />
+                    <span class="input-unit-badge">hrs</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="life-separator">Vida del Separador</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="life-separator" class="form-control" placeholder="4000" />
+                    <span class="input-unit-badge">hrs</span>
+                  </div>
+                </div>
+                <div class="form-group span-2">
+                  <label class="form-label" for="life-grease">Engrase del Motor</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="life-grease" class="form-control" placeholder="2000" />
+                    <span class="input-unit-badge">hrs</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Regulaciones programadas -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Regulaciones Programadas</h3>
+              </div>
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="reg-load-press">Presión de Carga (Load)</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="reg-load-press" class="form-control" placeholder="7.0" />
+                    <span class="input-unit-badge">bar</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="reg-unload-press">Presión de Descarga (Unload)</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="reg-unload-press" class="form-control" placeholder="7.5" />
+                    <span class="input-unit-badge">bar</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="reg-vsd">Punto de Ajuste VSD</label>
+                  <input type="text" id="reg-vsd" class="form-control" placeholder="7.2 bar / 60 Hz" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="reg-starts">Número de Arranques</label>
+                  <input type="number" id="reg-starts" class="form-control" placeholder="124" />
+                </div>
+                <div class="form-group span-2">
+                  <label class="form-label" for="reg-delay">Retardo de Carga</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="reg-delay" class="form-control" value="10" />
+                    <span class="input-unit-badge">seg</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Temperaturas y presiones -->
+            <div class="subsystem-box">
+              <div class="subsystem-header">
+                <h3>Temperaturas y Presiones</h3>
+              </div>
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="param-temp-elem1">Temp. Salida Elemento 1</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="param-temp-elem1" class="form-control" placeholder="84" />
+                    <span class="input-unit-badge">°C</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="param-temp-elem2">Temp. Elemento 2 (Si aplica)</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="param-temp-elem2" class="form-control" placeholder="N/A" />
+                    <span class="input-unit-badge">°C</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="param-temp-oil">Temperatura del Aceite</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="param-temp-oil" class="form-control" placeholder="68" />
+                    <span class="input-unit-badge">°C</span>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="param-air-press">Presión de Aire</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="param-air-press" class="form-control" placeholder="7.2" />
+                    <span class="input-unit-badge">bar</span>
+                  </div>
+                </div>
+                <div class="form-group span-2">
+                  <label class="form-label" for="param-inter-press">Presión Intermedia</label>
+                  <div class="input-with-unit">
+                    <input type="text" id="param-inter-press" class="form-control" placeholder="N/A" />
+                    <span class="input-unit-badge">bar</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 6: OBSERVACIONES Y RECOMENDACIONES
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-6" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">📝</span>
+                <div>
+                  <h2>Paso 6: Observaciones y Recomendaciones</h2>
+                  <p>Campos de texto abiertos para detallar hallazgos, pruebas efectuadas y sugerencias técnicas.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.35rem;">
+                <label class="form-label label-required" for="field-observations" style="margin: 0;">
+                  Observaciones Técnicas del Servicio
+                </label>
+                <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+                  <span style="font-size: 0.74rem; color: var(--color-text-muted); font-weight: 600;">⚡ Estándar por horas:</span>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.app.applyStandardObservation('2000', true)" style="padding: 0.15rem 0.5rem; font-size: 0.74rem;">2000 hrs</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.app.applyStandardObservation('4000', true)" style="padding: 0.15rem 0.5rem; font-size: 0.74rem;">4000 hrs</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.app.applyStandardObservation('8000', true)" style="padding: 0.15rem 0.5rem; font-size: 0.74rem;">8000 hrs</button>
+                </div>
+              </div>
+              <textarea 
+                id="field-observations" 
+                class="form-control" 
+                rows="6" 
+                placeholder="Describa ampliamente los trabajos efectuados, componentes reemplazados, fallas o desgastes encontrados durante la inspección, pruebas de arranque y carga realizadas..."
+              ></textarea>
+              <span id="observations-autofill-hint" class="form-hint" style="color: var(--color-accent); font-weight: 600; margin-top: 0.35rem; display: none;">
+                ⚡ Observaciones autocompletadas según estándar técnico.
+              </span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label label-required" for="field-recommendations">
+                Recomendaciones de Ingeniería y Próximos Mantenimientos
+              </label>
+              <textarea 
+                id="field-recommendations" 
+                class="form-control" 
+                rows="6" 
+                placeholder="Registre recomendaciones técnicas para el cliente: componentes con desgaste que requieren reemplazo en la próxima visita, monitoreo de temperaturas, limpieza periódica de filtros de aire, etc..."
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 7: FOTOGRAFÍAS
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-7" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">📷</span>
+                <div>
+                  <h2>Paso 7: Registro Fotográfico</h2>
+                  <p>Tome o adjunte fotografías en campo con descripciones técnicas. Las imágenes se optimizan automáticamente.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Upload Dropzone -->
+            <div id="photo-dropzone" class="photo-upload-dropzone">
+              <div class="dropzone-icon">📷</div>
+              <h3>Subir o Tomar Fotografías</h3>
+              <p>Arrastre archivos aquí o use los botones para abrir la cámara o seleccionar de la galería.</p>
+              
+              <div class="dropzone-buttons">
+                <!-- Camera Input -->
+                <label class="btn btn-primary">
+                  📸 Tomar con Cámara
+                  <input type="file" id="photo-camera-input" accept="image/*" capture="environment" multiple style="display: none;" />
+                </label>
+                <!-- Gallery Input -->
+                <label class="btn btn-secondary">
+                  🖼️ Seleccionar de Galería
+                  <input type="file" id="photo-file-input" accept="image/*" multiple style="display: none;" />
+                </label>
+              </div>
+            </div>
+
+            <!-- Gallery Grid -->
+            <div id="photo-gallery-grid" class="photo-gallery-grid">
+              <!-- Rendered dynamically by PhotoManager -->
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 8: FIRMAS DIGITALES
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-8" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">✍️</span>
+                <div>
+                  <h2>Paso 8: Firmas Digitales y Conformidad</h2>
+                  <p>Dibuje la firma directamente en pantalla con dedo o lápiz digital. Se incorporarán al PDF final.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="signature-grid">
+              <!-- Firma Técnico -->
+              <div class="signature-box">
+                <div class="signature-box-header">
+                  <h4>Firma del Técnico Responsable</h4>
+                  <button type="button" id="btn-clear-tech-sig" class="btn btn-sm btn-secondary">Borrar</button>
+                </div>
+                <div class="canvas-wrapper">
+                  <canvas id="tech-signature-canvas"></canvas>
+                  <span id="tech-sig-placeholder" class="canvas-placeholder-text">Dibuje su firma aquí</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="field-tech-name">Nombre y Registro del Técnico</label>
+                  <input type="text" id="field-tech-name" class="form-control" placeholder="Nombre completo del técnico" list="tech-names-list" />
+                  <datalist id="tech-names-list">
+                    <option value="GINO GREGORIO SILVA CLEMENTE">
+                    <option value="ABEL ELIAS LUNA YSIDRO">
+                    <option value="CARLOS GIOVANNY OJEDA CAMARGO">
+                  </datalist>
+                </div>
+              </div>
+
+              <!-- Firma Cliente -->
+              <div class="signature-box">
+                <div class="signature-box-header">
+                  <h4>Firma y Conformidad del Cliente</h4>
+                  <button type="button" id="btn-clear-client-sig" class="btn btn-sm btn-secondary">Borrar</button>
+                </div>
+                <div class="canvas-wrapper">
+                  <canvas id="client-signature-canvas"></canvas>
+                  <span id="client-sig-placeholder" class="canvas-placeholder-text">Firma del representante del cliente</span>
+                </div>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label" for="field-client-signer-name">Nombre del Representante</label>
+                    <input type="text" id="field-client-signer-name" class="form-control" placeholder="Ej: Ing. Carlos Méndez" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="field-client-signer-pos">Cargo / DNI</label>
+                    <input type="text" id="field-client-signer-pos" class="form-control" placeholder="Jefe de Mantenimiento" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Conformity Notice -->
+            <div class="conformity-notice">
+              <span>⚖️</span>
+              <div>
+                <strong>Nota de Conformidad del Servicio:</strong> Las firmas registradas certifican la recepción de los trabajos técnicos efectuados en el compresor, la entrega del área de trabajo limpia y el equipo en condición operativa bajo los estándares de INDUSTRAC S.A.C.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PASO 9: REVISIÓN Y GENERACIÓN PDF
+             ------------------------------------------------------------------ -->
+        <div id="step-pane-9" class="form-step-pane">
+          <div class="form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <span class="card-icon">🚀</span>
+                <div>
+                  <h2>Paso 9: Revisión Final y Emisión del Reporte</h2>
+                  <p>Verifique los datos registrados antes de generar el archivo PDF oficial descargable.</p>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.75rem;">
+                <button type="button" class="btn btn-secondary" onclick="window.app.previewReportPdf()">
+                  👁️ Vista Previa en Pantalla
+                </button>
+                <button type="button" class="btn btn-accent btn-lg" onclick="window.app.finalizeReport()">
+                  📄 Finalizar y Descargar PDF
+                </button>
+              </div>
+            </div>
+
+            <!-- Review Summary Cards -->
+            <div id="review-summary-content">
+              <!-- Rendered dynamically by app.js -->
+            </div>
+          </div>
+        </div>
+
+      </form>
+
+    </section>
+
+    <!-- ======================================================================
+         TAB 2: Historial de Reportes
+         ====================================================================== -->
+    <section id="tab-history" class="tab-content">
+      <div class="table-card">
+        <div class="table-toolbar">
+          <div class="search-input-wrap">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <input type="text" id="search-history-input" class="form-control" placeholder="Buscar por cliente, N° reporte, modelo, técnico..." />
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <select id="filter-history-status" class="form-control filter-select">
+              <option value="">Todos los Estados</option>
+              <option value="Finalizado">Finalizado</option>
+              <option value="Borrador">Borrador</option>
+              <option value="Pendiente de revisión">Pendiente de revisión</option>
+            </select>
+            <button type="button" class="btn btn-secondary" onclick="window.app.openGoogleSheetsModal()" style="display: flex; align-items: center; gap: 0.4rem;">
+              <span>📊</span> Google Sheets
+            </button>
+            <button type="button" class="btn btn-primary" onclick="window.app.startNewReport()">
+              ＋ Nuevo Reporte
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>N° Reporte</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Modelo</th>
+                <th>API / ID Máquina</th>
+                <th>Técnico</th>
+                <th>Mantenimiento</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 3: Catálogo de Equipos
+         ====================================================================== -->
+    <section id="tab-equipments" class="tab-content">
+      <!-- Catalog Header Toolbar -->
+      <div class="table-card" style="margin-bottom: 1.25rem;">
+        <div class="table-toolbar">
+          <div>
+            <h2 style="font-size: 1.25rem; font-weight: 800; color: var(--color-primary-dark); margin: 0;">
+              Catálogo de Clientes &amp; Parque de Compresores
+            </h2>
+            <p style="font-size: 0.82rem; color: var(--color-text-muted); margin-top: 0.2rem;">
+              Fichas técnicas individuales, códigos API únicos y vinculación directa con reportes técnicos.
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+            <button type="button" id="btn-demo-manager" class="btn btn-secondary">
+              🧪 Simulación &amp; Demo
+            </button>
+            <button type="button" id="btn-new-client" class="btn btn-secondary">
+              ＋ Nuevo Cliente
+            </button>
+            <button type="button" id="btn-new-equipment" class="btn btn-primary">
+              ＋ Registrar Compresor
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Master-Detail Catalog Layout -->
+      <div class="catalog-layout">
+        <!-- Left: Clients Sidebar -->
+        <aside class="catalog-sidebar">
+          <div class="catalog-sidebar-header">
+            <span class="catalog-sidebar-title">Clientes Registrados</span>
+            <span id="catalog-clients-badge" class="badge" style="background: #E2E8F0; color: #334155;">10</span>
+          </div>
+
+          <!-- Client Search -->
+          <div class="search-input-wrap" style="min-width: 100%;">
+            <input type="text" id="catalog-client-search" class="form-control" placeholder="Buscar por nombre de cliente..." />
+          </div>
+
+          <!-- All Clients Quick Select -->
+          <div 
+            class="client-card-item active" 
+            id="client-card-all" 
+            onclick="window.app.selectClient('all')"
+          >
+            <div class="client-card-top">
+              <span class="client-card-name">🌐 Todos los Clientes</span>
+              <span class="badge" id="catalog-total-equipments-badge" style="background: #031240; color: white;">20</span>
+            </div>
+            <div class="client-card-counts">
+              <span>Vista global de todo el parque</span>
+            </div>
+          </div>
+
+          <!-- Dynamic Clients List -->
+          <div id="catalog-clients-list" class="catalog-clients-list">
+            <!-- Rendered dynamically -->
+          </div>
+        </aside>
+
+        <!-- Right: Equipments of Selected Client -->
+        <main class="catalog-main">
+          <!-- Active Client Header Card -->
+          <div id="catalog-active-client-header" class="client-profile-card">
+            <div class="client-profile-info">
+              <h3 id="active-client-title">
+                <span>🌐 Todos los Clientes</span>
+              </h3>
+              <p id="active-client-desc">
+                Mostrando compresores de todos los clientes registrados en la plataforma.
+              </p>
+            </div>
+            <div id="active-client-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" id="btn-add-equipment-to-client" class="btn btn-accent btn-sm" onclick="window.app.openEquipmentModalForCurrentClient()">
+                ＋ Agregar Compresor a este Cliente
+              </button>
+              <button type="button" id="btn-delete-client" class="btn btn-danger btn-sm" style="display: none;" onclick="window.app.deleteCurrentClient()">
+                🗑️ Eliminar Cliente
+              </button>
+            </div>
+          </div>
+
+          <!-- Equipments Table Card -->
+          <div class="table-card">
+            <div class="table-toolbar">
+              <!-- Search by Model, Serial, or API Code -->
+              <div class="search-input-wrap">
+                <input 
+                  type="text" 
+                  id="catalog-equipment-search" 
+                  class="form-control" 
+                  placeholder="🔍 Buscar por Modelo, N° de Serie o Código API..." 
+                />
+              </div>
+
+              <!-- Status Filter -->
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <label for="catalog-equipment-status-filter" style="font-size: 0.82rem; font-weight: 600; color: var(--color-text-muted);">
+                  Estado:
+                </label>
+                <select id="catalog-equipment-status-filter" class="form-control filter-select">
+                  <option value="all">Todos los Estados</option>
+                  <option value="Activo">Solo Activos</option>
+                  <option value="Inactivo">Solo Inactivos</option>
+                  <option value="demo">Solo Demo / Simulación</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>API / ID Máquina</th>
+                    <th>Cliente</th>
+                    <th>Modelo</th>
+                    <th>Horómetro</th>
+                    <th>Ubicación</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="equipments-table-body">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </main>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 4: Planes de Mantenimiento
+         ====================================================================== -->
+    <section id="tab-plans" class="tab-content">
+      <div style="margin-bottom: 1rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--color-primary-dark);">
+          Administración de Planes de Mantenimiento
+        </h2>
+        <p style="font-size: 0.85rem; color: var(--color-text-muted);">
+          Configuración de tareas y protocolos sugeridos automáticamente por horas de servicio.
+        </p>
+      </div>
+
+      <div id="plans-view-container">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 5: Horómetros y Próximos Mantenimientos
+         ====================================================================== -->
+    <section id="tab-horometers" class="tab-content">
+      <!-- Encabezado Sencillo y Profesional -->
+      <div class="horometer-dashboard-header">
+        <div class="horometer-title-group">
+          <h2 class="horometer-main-title">
+            <span>⏱️</span> Horómetros y Próximos Mantenimientos
+          </h2>
+          <p class="horometer-subtitle">
+            Control de horas de operación y programación de servicios.
+          </p>
+        </div>
+
+        <div class="horometer-header-actions">
+          <!-- Segmented Mode Switcher (Datos Reales vs Modo Demostración) -->
+          <div class="horometer-mode-segmented" id="horometer-mode-switcher">
+            <button type="button" class="mode-pill-btn active" id="btn-mode-real" onclick="window.app.setHorometerMode('real')">
+              🏢 Datos Reales (<span id="mode-count-real">0</span>)
+            </button>
+            <button type="button" class="mode-pill-btn" id="btn-mode-demo" onclick="window.app.setHorometerMode('demo')">
+              🧪 Modo Demostración (<span id="mode-count-demo">0</span>)
+            </button>
+          </div>
+
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.loadHorometersData()" title="Refrescar datos">
+            🔄 Actualizar
+          </button>
+        </div>
+      </div>
+
+      <!-- Demo Mode Alert Banner (Visible only in Demo Mode) -->
+      <div id="horometers-demo-banner" class="demo-banner-strip" style="display: none;">
+        <div class="demo-banner-left">
+          <span class="demo-tag-pill">🧪 MODO DEMOSTRACIÓN ACTIVO</span>
+          <span class="demo-banner-text">
+            Visualizando equipos simulados. <strong>Los datos demostrativos no alteran el catálogo real ni se envían a Google Sheets o Drive.</strong>
+          </span>
+        </div>
+        <div class="demo-banner-right">
+          <button type="button" class="btn btn-xs btn-outline-light" onclick="window.app.resetDemoHorometers()" title="Restaura la simulación a sus valores de fábrica">
+            ↺ Reiniciar Demo
+          </button>
+          <button type="button" class="btn btn-xs btn-light" onclick="window.app.setHorometerMode('real')">
+            ✕ Volver a Reales
+          </button>
+        </div>
+      </div>
+
+      <!-- TABLA PRINCIPAL DE EQUIPOS -->
+      <div class="table-card horometers-table-card">
+        <div class="table-toolbar" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 1rem 1.25rem;">
+          <!-- Búsqueda por cliente, modelo o serie -->
+          <div class="search-input-wrap" style="min-width: 280px; flex: 1;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <input type="text" id="horometer-search-input" class="form-control" placeholder="Buscar por cliente, modelo o serie..." oninput="window.app.filterHorometersTable()" />
+          </div>
+
+          <!-- Selector de Estado -->
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select id="horometer-filter-status" class="form-control filter-select" onchange="window.app.filterHorometersTable()">
+              <option value="all">Todos los Estados</option>
+              <option value="AL DÍA">🟢 AL DÍA</option>
+              <option value="PRÓXIMO">🟡 PRÓXIMO</option>
+              <option value="VENCIDO">🔴 VENCIDO</option>
+              <option value="PENDIENTE DE DATOS">⚪ PENDIENTE DE DATOS</option>
+            </select>
+            <span class="table-count-tag" id="table-total-count-badge" style="white-space: nowrap; font-weight: 600;">0 equipos</span>
+          </div>
+        </div>
+
+        <!-- Tabla de Equipos (8 columnas requeridas + acciones) -->
+        <div class="table-responsive">
+          <table class="custom-table horometers-table" id="horometers-table-el">
+            <thead>
+              <tr>
+                <th>CLIENTE</th>
+                <th>EQUIPO</th>
+                <th>ÚLTIMO SERVICIO</th>
+                <th>ÚLTIMO HORÓMETRO</th>
+                <th>ÚLTIMO MANTENIMIENTO</th>
+                <th>PRÓXIMO SERVICIO</th>
+                <th>FECHA ESTIMADA</th>
+                <th>ESTADO</th>
+                <th style="text-align: center; width: 110px;">ACCIONES</th>
+              </tr>
+            </thead>
+            <tbody id="horometers-tbody">
+              <!-- Rendered dynamically by app.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Vista Adaptable Móvil / Tablet -->
+        <div id="horometers-mobile-cards" class="horometers-mobile-container" style="display: none; padding: 1rem;">
+          <!-- Rendered dynamically by app.js -->
+        </div>
+
+        <!-- Estado Vacío -->
+        <div id="horometers-empty-state" class="empty-state" style="display: none; padding: 3rem 1.5rem; text-align: center;">
+          <span style="font-size: 2.2rem;">🔍</span>
+          <h4 style="margin: 0.5rem 0 0.25rem; color: var(--color-primary-dark);">No se encontraron equipos</h4>
+          <p style="color: var(--color-text-muted); font-size: 0.85rem;" id="horometers-empty-message">No hay registros que coincidan con el criterio de búsqueda.</p>
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 0.75rem;" onclick="window.app.clearAllHorometerFilters()">Restablecer Búsqueda</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================
+       Bottom Floating Action Bar (Responsive Mobile/Tablet/Desktop)
+       ======================================================================== -->
+  <footer class="bottom-actions-bar">
+    <div class="bottom-actions-container">
+      <div class="bottom-actions-left">
+        <button type="button" id="btn-save-draft" class="btn btn-secondary">
+          💾 Guardar Borrador
+        </button>
+      </div>
+
+      <div class="bottom-actions-right">
+        <button type="button" id="btn-prev" class="btn btn-secondary" style="display: none;">
+          ◀ Anterior
+        </button>
+        <button type="button" id="btn-next" class="btn btn-primary">
+          Siguiente ▶
+        </button>
+        <button type="button" id="btn-finalize" class="btn btn-accent btn-lg" style="display: none;">
+          📄 Finalizar y Descargar PDF
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========================================================================
+       Modals: PDF Preview & Equipment Registration
+       ======================================================================== -->
+  
+  <!-- PDF Live Preview Modal -->
+  <div id="pdf-preview-modal" class="modal-overlay">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>Vista Previa del Reporte PDF — INDUSTRAC S.A.C.</h3>
+        <button type="button" class="btn-close-modal" onclick="window.app.closePreviewModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 0; background: #525659;">
+        <iframe id="pdf-preview-iframe" style="width: 100%; height: 100%; border: none;"></iframe>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closePreviewModal()">Cerrar</button>
+        <button type="button" class="btn btn-accent" onclick="window.app.finalizeReport()">Descargar PDF Oficial</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF Download Success Modal (Universal browser download guarantee) -->
+  <div id="pdf-download-success-modal" class="modal-overlay">
+    <div class="modal-card modal-lg">
+      <div class="modal-header" style="background: linear-gradient(135deg, #031240 0%, #051A59 100%); color: white;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.5rem;">✅</span>
+          <div>
+            <h3 style="color: white; font-size: 1.15rem; margin: 0;">¡Reporte Guardado y Generado Correctamente!</h3>
+            <p id="download-modal-subtitle" style="font-size: 0.85rem; color: #38BDF8; margin: 0; font-weight: 600;">N° REP-2026-0008</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeDownloadSuccessModal()">✕</button>
+      </div>
+
+      <!-- Confirmation Banner & Primary Actions -->
+      <div style="padding: 1.25rem 1.5rem; background: #F0FDF4; border-bottom: 1px solid #BBF7D0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: #DCFCE7; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: #16A34A; flex-shrink: 0; border: 2px solid #86EFAC;">
+              ✓
+            </div>
+            <div>
+              <h4 style="margin: 0; color: #166534; font-size: 1.05rem; font-weight: 700;">
+                ¡El reporte se guardó correctamente en el sistema!
+              </h4>
+              <p id="download-modal-details" style="margin: 0.25rem 0 0; font-size: 0.85rem; color: #15803D;">
+                Datos registrados con estado <strong>Finalizado</strong>, sincronizados a Google Drive/Sheets y PDF listo para descargar.
+              </p>
+            </div>
+          </div>
+          <div>
+            <button type="button" class="btn btn-primary" id="btn-modal-new-report-top" style="background: #16A34A; border-color: #16A34A; font-weight: 700; padding: 0.65rem 1.25rem; font-size: 0.95rem; box-shadow: 0 2px 5px rgba(22, 163, 74, 0.3);" onclick="window.app.startNewReportFromSuccessModal()">
+              ＋ Generar Nuevo Reporte
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Document Download Actions Toolbar -->
+      <div style="padding: 0.85rem 1.5rem; background: #F8FAFC; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--color-text-main); font-weight: 600;">
+          <span>📄 Opciones del Archivo:</span>
+        </div>
+        <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+          <a id="btn-modal-direct-download" href="#" class="btn btn-accent btn-md" download style="text-decoration: none; font-weight: 600;">
+            ⬇️ Descargar Archivo PDF
+          </a>
+          <a id="btn-modal-drive-link" href="#" target="_blank" class="btn btn-primary btn-md" style="display: none; text-decoration: none; background: #0F9D58; border-color: #0F9D58; font-weight: 600;">
+            ☁️ Descargar desde Google Drive
+          </a>
+          <a id="btn-modal-open-tab" href="#" target="_blank" class="btn btn-secondary btn-md" style="text-decoration: none;">
+            👁️ Abrir en Nueva Pestaña
+          </a>
+          <button type="button" class="btn btn-secondary btn-md" onclick="window.app.closeDownloadSuccessModal(); window.app.switchTab('tab-history');">
+            📋 Ver en Historial
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body" style="padding: 0; background: #525659; flex: 1; min-height: 480px;">
+        <iframe id="pdf-download-iframe" style="width: 100%; height: 100%; min-height: 480px; border: none;"></iframe>
+      </div>
+
+      <div class="modal-footer" style="padding: 0.85rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closeDownloadSuccessModal()">
+          Cerrar
+        </button>
+        <button type="button" class="btn btn-primary" style="background: #16A34A; border-color: #16A34A; font-weight: 700; padding: 0.6rem 1.25rem;" onclick="window.app.startNewReportFromSuccessModal()">
+          ＋ Generar Nuevo Reporte
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Equipment Form Modal (Registrar / Editar) -->
+  <div id="equipment-modal" class="modal-overlay">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 id="modal-equipment-title">Registrar / Editar Compresor</h3>
+        <button type="button" class="btn-close-modal" onclick="window.app.closeEquipmentModal()">✕</button>
+      </div>
+      <form id="equipment-form">
+        <div class="modal-body">
+          <input type="hidden" id="modal-eq-id" />
+          <div class="form-grid-3">
+            <!-- 1. Cliente -->
+            <div class="form-group span-2">
+              <label class="form-label label-required" for="modal-eq-client-select">1. Cliente Asociado</label>
+              <select id="modal-eq-client-select" class="form-control" required>
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+
+            <!-- 2. API / ID Máquina -->
+            <div class="form-group">
+              <label class="form-label label-required" for="modal-eq-api-code">
+                2. API / ID Máquina
+              </label>
+              <input type="text" id="modal-eq-api-code" class="form-control" placeholder="DEMO-LAV-001" required />
+            </div>
+
+            <!-- 3. Fabricante -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-manufacturer">3. Fabricante</label>
+              <input type="text" id="modal-eq-manufacturer" class="form-control" value="Atlas Copco" />
+            </div>
+
+            <!-- 4. Modelo -->
+            <div class="form-group">
+              <label class="form-label label-required" for="modal-eq-model">4. Modelo</label>
+              <input type="text" id="modal-eq-model" class="form-control" placeholder="Ej: GA 37" required />
+            </div>
+
+            <!-- 6. Controlador -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-controller">6. Tipo de Controlador</label>
+              <input type="text" id="modal-eq-controller" class="form-control" placeholder="Pendiente de completar" />
+            </div>
+
+            <!-- 7. Presión -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-pressure">7. Presión de Trabajo</label>
+              <input type="text" id="modal-eq-pressure" class="form-control" placeholder="Pendiente de completar" />
+            </div>
+
+            <!-- 8. Caudal -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-airflow">8. Caudal</label>
+              <input type="text" id="modal-eq-airflow" class="form-control" placeholder="Pendiente de completar" />
+            </div>
+
+            <!-- 9. Tipo de Aceite -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-oil">9. Tipo de Aceite</label>
+              <input type="text" id="modal-eq-oil" class="form-control" placeholder="Pendiente de completar" list="oil-types-datalist" />
+              <datalist id="oil-types-datalist">
+                <option value="Ndurance (Presentación 5 L)"></option>
+                <option value="Ndurance de 20L"></option>
+                <option value="Sigma 5GAL"></option>
+                <option value="Sigma 1GAL"></option>
+                <option value="Roto Xtend (20 L)"></option>
+                <option value="Roto Xtend (5 L)"></option>
+                <option value="Roto-Inject"></option>
+              </datalist>
+            </div>
+
+            <!-- 10. Horómetro -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-hours">10. Horómetro Actual</label>
+              <input type="text" id="modal-eq-hours" class="form-control" placeholder="0 hrs" />
+            </div>
+
+            <!-- 12. Estado del Equipo -->
+            <div class="form-group">
+              <label class="form-label" for="modal-eq-status">12. Estado del Equipo</label>
+              <select id="modal-eq-status" class="form-control">
+                <option value="Activo">Activo (Operativo)</option>
+                <option value="Inactivo">Inactivo (Fuera de Servicio)</option>
+              </select>
+            </div>
+
+            <!-- 11. Ubicación -->
+            <div class="form-group span-3">
+              <label class="form-label" for="modal-eq-location">11. Ubicación del Equipo en Planta</label>
+              <input type="text" id="modal-eq-location" class="form-control" placeholder="Ej: Sala de Compresores Principal" />
+            </div>
+
+            <!-- 13. Observaciones -->
+            <div class="form-group span-3">
+              <label class="form-label" for="modal-eq-notes">13. Observaciones Técnicas</label>
+              <textarea id="modal-eq-notes" class="form-control" rows="2" placeholder="Notas sobre el compresor o historial..."></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="window.app.closeEquipmentModal()">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar en Catálogo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Technical Spec Sheet Modal (Ficha Técnica & Historial de Reportes) -->
+  <div id="equipment-detail-modal" class="modal-overlay">
+    <div class="modal-card modal-lg">
+      <div class="modal-header" style="background: linear-gradient(135deg, #031240 0%, #051A59 100%); color: white;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <span class="api-code-badge demo-code" id="detail-badge-api-code" style="font-size: 0.85rem;">DEMO-001</span>
+            <h3 id="detail-modal-title" style="color: white; margin: 0; font-size: 1.2rem;">Ficha Técnica de Equipo</h3>
+            <span id="detail-badge-status" class="badge-status active">Activo</span>
+          </div>
+          <p id="detail-modal-subtitle" style="font-size: 0.82rem; color: #18A2D9; margin: 0.25rem 0 0;">
+            Cliente: Científica del Sur • Atlas Copco
+          </p>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeEquipmentDetailModal()">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem; max-height: 80vh; overflow-y: auto;">
+        <!-- 13 Technical Specifications Grid -->
+        <h4 style="font-size: 0.95rem; font-weight: 800; color: var(--color-primary-dark); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+          ⚙️ 13 Características Técnicas Registradas
+        </h4>
+        <div class="equipment-detail-grid">
+          <div class="detail-field-box">
+            <div class="field-label">1. Cliente Asociado</div>
+            <div class="field-value" id="detail-field-client">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">2. Fabricante</div>
+            <div class="field-value" id="detail-field-manufacturer">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">3. Modelo</div>
+            <div class="field-value" id="detail-field-model">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">API / ID Máquina</div>
+            <div class="field-value" id="detail-field-api-code">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">6. Tipo de Controlador</div>
+            <div class="field-value" id="detail-field-controller">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">7. Presión de Trabajo</div>
+            <div class="field-value" id="detail-field-pressure">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">8. Caudal</div>
+            <div class="field-value" id="detail-field-airflow">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">9. Tipo de Aceite</div>
+            <div class="field-value" id="detail-field-oil">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">10. Horómetro Actual</div>
+            <div class="field-value" id="detail-field-hours">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">11. Ubicación del Equipo</div>
+            <div class="field-value" id="detail-field-location">-</div>
+          </div>
+          <div class="detail-field-box">
+            <div class="field-label">12. Estado del Equipo</div>
+            <div class="field-value" id="detail-field-status">-</div>
+          </div>
+          <div class="detail-field-box" style="grid-column: 1 / -1;">
+            <div class="field-label">13. Observaciones</div>
+            <div class="field-value" id="detail-field-notes" style="font-weight: 500; font-size: 0.88rem;">-</div>
+          </div>
+        </div>
+
+        <!-- Separate Report History Section for this Machine -->
+        <div style="margin-top: 1.5rem; border-top: 1.5px solid var(--color-border); padding-top: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <h4 style="font-size: 0.95rem; font-weight: 800; color: var(--color-primary-dark); margin: 0;">
+                📋 Historial de Reportes Técnicos de esta Máquina
+              </h4>
+              <p style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 0.15rem;">
+                Trazabilidad y servicios realizados exclusivamente a este equipo.
+              </p>
+            </div>
+            <button type="button" class="btn btn-accent btn-sm" id="btn-create-report-from-detail">
+              📝 Crear Nuevo Reporte para este Compresor
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="custom-table" style="font-size: 0.82rem;">
+              <thead>
+                <tr>
+                  <th>N° Reporte</th>
+                  <th>Fecha</th>
+                  <th>Técnico</th>
+                  <th>Mantenimiento</th>
+                  <th>Horómetro</th>
+                  <th>Estado</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="detail-reports-table-body">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="background: #F8FAFC;">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closeEquipmentDetailModal()">Cerrar</button>
+        <button type="button" class="btn btn-primary" id="btn-edit-from-detail">✏️ Editar Ficha</button>
+        <button type="button" class="btn btn-accent" id="btn-start-service-from-detail">⚡ Iniciar Reporte Técnico</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client Form Modal (Registrar / Editar Cliente) -->
+  <div id="client-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-client-title">Registrar Nuevo Cliente</h3>
+        <button type="button" class="btn-close-modal" onclick="window.app.closeClientModal()">✕</button>
+      </div>
+      <form id="client-form">
+        <div class="modal-body">
+          <input type="hidden" id="modal-client-id" />
+          <div class="form-grid-2">
+            <div class="form-group span-2">
+              <label class="form-label label-required" for="modal-client-name">Nombre de la Empresa o Cliente</label>
+              <input type="text" id="modal-client-name" class="form-control" placeholder="Ej: Molitalia, QROMA, etc." required />
+            </div>
+            <div class="form-group span-2">
+              <label class="form-label" for="modal-client-address">Dirección de Planta / Sede</label>
+              <input type="text" id="modal-client-address" class="form-control" placeholder="Ej: Av. Venezuela 2850, Lima" />
+            </div>
+            <div class="form-group span-2">
+              <label class="form-label" for="modal-client-contact">Contacto / Área Responsable</label>
+              <input type="text" id="modal-client-contact" class="form-control" placeholder="Ej: Ing. Mantenimiento / Jefe de Planta" />
+            </div>
+            <div class="form-group span-2">
+              <label class="form-label" for="modal-client-notes">Notas / Observaciones</label>
+              <textarea id="modal-client-notes" class="form-control" rows="2" placeholder="Detalles de acceso, protocolos..."></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" id="btn-modal-delete-client" class="btn btn-danger" style="display: none;" onclick="window.app.deleteClientFromModal()">
+            🗑️ Eliminar Cliente
+          </button>
+          <div style="display: flex; gap: 0.5rem; margin-left: auto;">
+            <button type="button" class="btn btn-secondary" onclick="window.app.closeClientModal()">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar Cliente</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Demo Simulator Modal (Administrar Datos de Demostración) -->
+  <div id="demo-manager-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%); color: white;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span style="font-size: 1.4rem;">🧪</span>
+          <div>
+            <h3 style="color: white; margin: 0; font-size: 1.15rem;">Simulador de Catálogo de Equipos</h3>
+            <p style="color: #A5B4FC; font-size: 0.78rem; margin: 0.15rem 0 0;">Control de datos de prueba y demostración técnica INDUSTRAC</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeDemoManagerModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem;">
+        <div style="background: #F8FAFC; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+          <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--color-primary-dark); margin-bottom: 0.5rem;">
+            Clientes y Compresores de Demostración Configurados:
+          </h4>
+          <ul style="font-size: 0.82rem; color: var(--color-text-main); margin-left: 1.25rem; line-height: 1.6;">
+            <li><strong>Lavarecina:</strong> 3 equipos (GA 75, GA 37, GA 22) • Códigos: <code>DEMO-LAV-001..003</code></li>
+            <li><strong>Científica del Sur:</strong> 4 equipos (GA 75 VSD+, GA 37, GA 22, GA 30) • Códigos: <code>DEMO-CDS-001..004</code></li>
+            <li><strong>Molitalia:</strong> 3 equipos (GA 45 VSD+, GA 55, GA 75) • Códigos: <code>DEMO-MOL-001..003</code></li>
+            <li><strong>QROMA:</strong> 3 equipos (GA 37, GA 55 VSD, GA 90) • Códigos: <code>DEMO-QRO-001..003</code></li>
+            <li><strong>FAMECA:</strong> 2 equipos (GA 45, GA 75 VSD+) • Códigos: <code>DEMO-FAM-001..002</code></li>
+          </ul>
+          <p style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 0.75rem; border-top: 1px dashed var(--color-border); padding-top: 0.5rem;">
+            💡 <em>Total: 5 clientes y 15 equipos ficticios con códigos API únicos para simular la operación.</em>
+          </p>
+        </div>
+
+        <div id="demo-status-summary" style="margin-bottom: 1.25rem; font-size: 0.85rem;">
+          <!-- Loaded dynamically -->
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <button type="button" class="btn btn-primary" style="width: 100%;" onclick="window.app.loadDemoData()">
+            🔄 Cargar / Restaurar Datos de Simulación (15 Equipos)
+          </button>
+          <button type="button" class="btn btn-danger" style="width: 100%;" onclick="window.app.clearDemoData()">
+            🧹 Limpiar Únicamente Registros de Demostración
+          </button>
+          <p style="font-size: 0.75rem; color: var(--color-text-muted); text-align: center;">
+            🛡️ La limpieza de simulación preserva al 100% sus clientes, equipos y reportes reales.
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closeDemoManagerModal()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Sheets Integration Modal -->
+  <div id="google-sheets-modal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 620px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #0F5132 0%, #198754 100%); color: white; padding: 1.15rem 1.4rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.5rem;">📊</span>
+          <div>
+            <h3 style="color: white; margin: 0; font-size: 1.15rem; font-weight: 700;">Conexión con Google Sheets & Google Drive</h3>
+            <p style="color: #D1E7DD; font-size: 0.78rem; margin: 0.15rem 0 0;">Sincronización de reportes, catálogo y respaldo automático de PDFs en Drive (PDF_REPORTES2027)</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" onclick="window.app.closeGoogleSheetsModal()" style="color: white;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.4rem; max-height: 75vh; overflow-y: auto;">
+        
+        <!-- Status Card -->
+        <div style="background: #F8FAFC; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <strong style="font-size: 0.88rem; color: var(--color-primary-dark);">Estado de Conexión:</strong>
+            <span id="sheets-connection-badge" class="badge" style="background: #E2E8F0; color: #475569;">No configurado</span>
+          </div>
+          <div id="sheets-last-sync-text" style="font-size: 0.78rem; color: var(--color-text-muted);">
+            Última sincronización: Ninguna
+          </div>
+        </div>
+
+        <!-- Webhook URL Input -->
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label class="form-label" for="input-sheets-webhook-url" style="font-weight: 700;">
+            URL de la Aplicación Web (Google Apps Script):
+          </label>
+          <input 
+            type="url" 
+            id="input-sheets-webhook-url" 
+            class="form-control" 
+            placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+            style="font-family: monospace; font-size: 0.85rem;"
+          />
+          <small style="color: var(--color-text-muted); font-size: 0.76rem; display: block; margin-top: 0.35rem;">
+            💡 Pega aquí la URL generada al publicar tu script en Google Sheets como Aplicación Web.
+          </small>
+        </div>
+
+        <!-- Auto Sync Checkbox -->
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label style="display: flex; align-items: center; gap: 0.65rem; cursor: pointer; font-size: 0.88rem; font-weight: 600;">
+            <input type="checkbox" id="checkbox-sheets-autosync" checked style="width: 18px; height: 18px; accent-color: #198754;" />
+            Sincronizar automáticamente a Google Sheets al finalizar cada reporte
+          </label>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 0.65rem; margin-bottom: 1.25rem;">
+          <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="window.app.testGoogleSheetsConnection()">
+            🔌 Probar Conexión
+          </button>
+          <button type="button" class="btn btn-primary" style="flex: 1; background: #198754; border-color: #198754;" onclick="window.app.syncAllToGoogleSheets()">
+            🔄 Sincronizar Todo Ahora
+          </button>
+        </div>
+
+        <!-- Instructions Collapsible -->
+        <details style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: var(--radius-md); padding: 0.85rem; font-size: 0.82rem; color: #92400E;">
+          <summary style="font-weight: 700; cursor: pointer; margin-bottom: 0.4rem;">
+            📖 ¿Cómo obtener tu URL de Google Apps Script en 2 minutos? (Clic aquí)
+          </summary>
+          <ol style="margin-left: 1.25rem; line-height: 1.6; margin-top: 0.5rem;">
+            <li>Abre tu Google Sheets nuevo o existente.</li>
+            <li>En el menú superior ve a: <strong>Extensiones &gt; Apps Script</strong>.</li>
+            <li>Copia el código listo del archivo del proyecto <code>google_sheets_webhook.js</code> y pégalo allí.</li>
+            <li>Haz clic en <strong>Guardar</strong> y luego en <strong>Implementar &gt; Nueva implementación</strong>.</li>
+            <li>Selecciona tipo <strong>"Aplicación web"</strong>:
+              <ul>
+                <li>Ejecutar como: <strong>"Yo"</strong></li>
+                <li>Quién tiene acceso: <strong>"Cualquier usuario" (Anyone)</strong></li>
+              </ul>
+            </li>
+            <li>Copia la URL que termina en <code>/exec</code> y pégala en el campo de arriba.</li>
+            <li>📁 <strong>Google Drive:</strong> La carpeta <code>PDF_REPORTES2027</code> se creará o vinculará automáticamente para almacenar los PDFs generados.</li>
+          </ol>
+        </details>
+
+      </div>
+      <div class="modal-footer" style="padding: 0.85rem 1.4rem; display: flex; justify-content: space-between; align-items: center; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closeGoogleSheetsModal()">Cerrar</button>
+        <button type="button" class="btn btn-primary" onclick="window.app.saveGoogleSheetsSettings()">Guardar Configuración</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODALES DEL MÓDULO DE HORÓMETROS
+       ======================================================================== -->
+
+  <!-- Modal 1: Registrar Nueva Lectura de Horómetro -->
+  <div id="horometer-reading-modal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #031240 0%, #051A59 100%); color: white;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span style="font-size: 1.4rem;">⏱️</span>
+          <div>
+            <h3 style="color: white; margin: 0; font-size: 1.15rem;">Registrar Lectura de Horómetro</h3>
+            <p id="reading-modal-machine-tag" style="color: #38BDF8; font-size: 0.8rem; margin: 0.15rem 0 0;">-</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeHorometerReadingModal()">✕</button>
+      </div>
+
+      <form id="horometer-reading-form" onsubmit="window.app.submitHorometerReading(event)">
+        <div class="modal-body" style="padding: 1.25rem;">
+          <input type="hidden" id="reading-equipment-id" />
+
+          <!-- Info Banner -->
+          <div style="background: #F8FAFC; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.35rem;">
+              <span style="color: var(--color-text-muted);">Cliente:</span>
+              <strong id="reading-client-name" style="color: var(--color-text-main);">-</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.35rem;">
+              <span style="color: var(--color-text-muted);">Modelo / Compresor:</span>
+              <span id="reading-model-name" style="color: var(--color-text-main);">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem;">
+              <span style="color: var(--color-text-muted);">Última Lectura Registrada:</span>
+              <strong id="reading-current-hours" style="color: #031240;">0 hrs</strong>
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <!-- Nueva Lectura -->
+            <div class="form-group span-2">
+              <label class="form-label label-required" for="field-new-reading-hours">
+                Nueva Lectura de Horómetro (Horas Totales)
+              </label>
+              <div class="input-with-unit">
+                <input type="number" id="field-new-reading-hours" class="form-control" placeholder="Ej: 5400" required min="0" step="1" style="font-size: 1.15rem; font-weight: 700; color: #031240;" />
+                <span class="input-unit-badge">hrs</span>
+              </div>
+            </div>
+
+            <!-- Fecha y Hora del Registro -->
+            <div class="form-group">
+              <label class="form-label label-required" for="field-reading-date">Fecha de la Lectura</label>
+              <input type="date" id="field-reading-date" class="form-control" required />
+            </div>
+
+            <!-- Técnico / Usuario -->
+            <div class="form-group">
+              <label class="form-label" for="field-reading-user">Registrado Por</label>
+              <input type="text" id="field-reading-user" class="form-control" placeholder="Nombre del técnico o usuario" />
+            </div>
+
+            <!-- Observaciones -->
+            <div class="form-group span-2">
+              <label class="form-label" for="field-reading-notes">Observaciones / Motivo (Opcional)</label>
+              <textarea id="field-reading-notes" class="form-control" rows="2" placeholder="Inspección semanal, toma de datos en planta, etc."></textarea>
+            </div>
+          </div>
+
+          <!-- Warning Box if Lower Reading -->
+          <div id="reading-lower-warning" style="display: none; background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: var(--radius-sm); padding: 0.85rem; margin-top: 0.75rem;">
+            <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+              <span style="font-size: 1.25rem;">⚠️</span>
+              <div>
+                <strong style="color: #991B1B; font-size: 0.85rem;">Advertencia: Lectura Menor que la Anterior</strong>
+                <p id="reading-lower-msg" style="color: #B91C1C; font-size: 0.8rem; margin: 0.2rem 0 0.5rem;">
+                  La lectura ingresada es menor que la registrada previamente.
+                </p>
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #7F1D1D; cursor: pointer;">
+                  <input type="checkbox" id="chk-confirm-lower-reading" />
+                  Confirmar corrección controlada (cambio de horómetro o corrección de error anterior).
+                </label>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer" style="padding: 0.85rem 1.25rem; display: flex; justify-content: flex-end; gap: 0.65rem; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+          <button type="button" class="btn btn-secondary" onclick="window.app.closeHorometerReadingModal()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-reading">Guardar Lectura</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2: Registrar Mantenimiento Realizado -->
+  <div id="horometer-maintenance-modal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 560px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #064E3B 0%, #047857 100%); color: white;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span style="font-size: 1.4rem;">🔧</span>
+          <div>
+            <h3 style="color: white; margin: 0; font-size: 1.15rem;">Registrar Mantenimiento Realizado</h3>
+            <p id="maint-modal-machine-tag" style="color: #A7F3D0; font-size: 0.8rem; margin: 0.15rem 0 0;">Avanza el ciclo de mantenimiento del equipo</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeHorometerMaintenanceModal()">✕</button>
+      </div>
+
+      <form id="horometer-maintenance-form" onsubmit="window.app.submitHorometerMaintenance(event)">
+        <div class="modal-body" style="padding: 1.25rem;">
+          <input type="hidden" id="maint-equipment-id" />
+
+          <!-- Notice banner -->
+          <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1.25rem;">
+            <div style="font-size: 0.82rem; color: #065F46; line-height: 1.5;">
+              💡 <strong>Aviso:</strong> Al registrar un mantenimiento realizado, se actualiza la fecha de última intervención y el sistema <strong>avanza automáticamente al siguiente hito</strong> del ciclo (ej. de Plan A a Plan B o Plan C).
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <!-- Cliente & Equipo -->
+            <div class="form-group span-2">
+              <label class="form-label">Compresor Seleccionado</label>
+              <input type="text" id="maint-machine-summary" class="form-control" readonly style="background: #F8FAFC; font-weight: 600;" />
+            </div>
+
+            <!-- Fecha del Servicio -->
+            <div class="form-group">
+              <label class="form-label label-required" for="field-maint-date">Fecha de Ejecución</label>
+              <input type="date" id="field-maint-date" class="form-control" required />
+            </div>
+
+            <!-- Horómetro al momento del servicio -->
+            <div class="form-group">
+              <label class="form-label label-required" for="field-maint-hours">Horómetro en el Servicio</label>
+              <div class="input-with-unit">
+                <input type="number" id="field-maint-hours" class="form-control" required min="0" placeholder="Ej: 6000" />
+                <span class="input-unit-badge">hrs</span>
+              </div>
+            </div>
+
+            <!-- Plan ejecutado -->
+            <div class="form-group span-2">
+              <label class="form-label label-required" for="field-maint-plan">Plan Efectivamente Realizado</label>
+              <select id="field-maint-plan" class="form-control" required>
+                <option value="Plan A — 2000 horas">Plan A — 2000 horas (Filtros primarios)</option>
+                <option value="Plan B — 4000 horas">Plan B — 4000 horas (Filtros + Aceite)</option>
+                <option value="Plan C — 8000 horas">Plan C — 8000 horas (Mantenimiento mayor y kits)</option>
+                <option value="Plan A — 3000 horas">Plan A — 3000 horas (Ciclo especial)</option>
+                <option value="Plan B — 6000 horas">Plan B — 6000 horas (Ciclo especial)</option>
+                <option value="Plan C — 12000 horas">Plan C — 12000 horas (Ciclo especial)</option>
+                <option value="Overhaul">Overhaul (Reacondicionamiento integral)</option>
+                <option value="Correctivo">Correctivo</option>
+              </select>
+            </div>
+
+            <!-- N° Reporte Asociado -->
+            <div class="form-group">
+              <label class="form-label" for="field-maint-report-num">N° Reporte Técnico (Opcional)</label>
+              <input type="text" id="field-maint-report-num" class="form-control" placeholder="Ej: REP-2026-0008" />
+            </div>
+
+            <!-- Técnico Responsable -->
+            <div class="form-group">
+              <label class="form-label" for="field-maint-tech">Técnico Responsable</label>
+              <select id="field-maint-tech" class="form-control">
+                <option value="GINO GREGORIO SILVA CLEMENTE">GINO GREGORIO SILVA CLEMENTE</option>
+                <option value="ABEL ELIAS LUNA YSIDRO">ABEL ELIAS LUNA YSIDRO</option>
+                <option value="CARLOS GIOVANNY OJEDA CAMARGO">CARLOS GIOVANNY OJEDA CAMARGO</option>
+                <option value="Otro">Otro / Externo</option>
+              </select>
+            </div>
+
+            <!-- Notas / Detalle -->
+            <div class="form-group span-2">
+              <label class="form-label" for="field-maint-notes">Notas / Trabajos Ejecutados</label>
+              <textarea id="field-maint-notes" class="form-control" rows="2" placeholder="Detalle de kits reemplazados, estado final del equipo..."></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding: 0.85rem 1.25rem; display: flex; justify-content: flex-end; gap: 0.65rem; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+          <button type="button" class="btn btn-secondary" onclick="window.app.closeHorometerMaintenanceModal()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" style="background: #047857; border-color: #047857;">Confirmar Mantenimiento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 3: Configuración de Línea Base y Ciclo -->
+  <div id="horometer-config-modal" class="modal-overlay">
+    <div class="modal-card modal-lg">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%); color: white;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span style="font-size: 1.4rem;">⚙️</span>
+          <div>
+            <h3 style="color: white; margin: 0; font-size: 1.15rem;">Configuración de Ciclo e Hitos de Mantenimiento</h3>
+            <p id="config-modal-machine-tag" style="color: #C7D2FE; font-size: 0.8rem; margin: 0.15rem 0 0;">Calibración de línea base técnica y parámetros de alerta</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeHorometerConfigModal()">✕</button>
+      </div>
+
+      <form id="horometer-config-form" onsubmit="window.app.submitHorometerConfig(event)">
+        <div class="modal-body" style="padding: 1.35rem;">
+          <input type="hidden" id="config-equipment-id" />
+
+          <!-- Resumen de Máquina -->
+          <div style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.35rem;">
+              <span style="color: #4338CA;">Cliente &amp; Máquina:</span>
+              <strong id="config-machine-title" style="color: #1E1B4B;">-</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem;">
+              <span style="color: #4338CA;">Horómetro Actual Registrado:</span>
+              <strong id="config-machine-current-hours" style="color: #1E1B4B;">0 hrs</strong>
+            </div>
+          </div>
+
+          <!-- Sección 1: Selección de Ciclo -->
+          <div style="margin-bottom: 1.25rem;">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--color-primary-dark); margin: 0 0 0.5rem;">
+              1. Ciclo de Mantenimiento del Compresor
+            </h4>
+            <div class="form-grid-2">
+              <div class="form-group span-2">
+                <label class="form-label label-required" for="field-config-cycle">Frecuencia y Secuencia del Ciclo</label>
+                <select id="field-config-cycle" class="form-control" onchange="window.app.onConfigCycleChanged(this.value)">
+                  <option value="ciclo_2000">Ciclo Estándar (2,000h / 4,000h / 8,000h) — Secuencia A / B / A / C</option>
+                  <option value="ciclo_3000">Ciclo Especial (3,000h / 6,000h / 12,000h) — Secuencia A / B / A / C</option>
+                </select>
+                <small class="form-hint" style="color: var(--color-text-muted); font-size: 0.75rem;">
+                  El ciclo determina los múltiplos de horas para Plan A, Plan B y Plan C.
+                </small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección 2: Último Mantenimiento Realizado (Línea Base) -->
+          <div style="margin-bottom: 1.25rem; border-top: 1px dashed var(--color-border); padding-top: 1rem;">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--color-primary-dark); margin: 0 0 0.5rem;">
+              2. Línea Base: Último Servicio Realizado
+            </h4>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label" for="field-config-last-date">Fecha Último Servicio</label>
+                <input type="date" id="field-config-last-date" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="field-config-last-hours">Horómetro en Último Servicio</label>
+                <div class="input-with-unit">
+                  <input type="number" id="field-config-last-hours" class="form-control" min="0" placeholder="Ej: 4000" oninput="window.app.autoCalculateNextMilestoneFromConfig()" />
+                  <span class="input-unit-badge">hrs</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="field-config-last-plan">Último Plan Ejecutado</label>
+                <select id="field-config-last-plan" class="form-control" onchange="window.app.autoCalculateNextMilestoneFromConfig()">
+                  <option value="Plan A — 2000 horas">Plan A — 2000 horas</option>
+                  <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
+                  <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
+                  <option value="Plan A — 3000 horas">Plan A — 3000 horas</option>
+                  <option value="Plan B — 6000 horas">Plan B — 6000 horas</option>
+                  <option value="Plan C — 12000 horas">Plan C — 12000 horas</option>
+                  <option value="Overhaul">Overhaul</option>
+                  <option value="">-- Sin registrar --</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección 3: Próximo Hito de Mantenimiento -->
+          <div style="margin-bottom: 1.25rem; border-top: 1px dashed var(--color-border); padding-top: 1rem;">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--color-primary-dark); margin: 0 0 0.5rem;">
+              3. Próximo Hito Programado
+            </h4>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label label-required" for="field-config-next-milestone">Próximo Hito de Horas</label>
+                <div class="input-with-unit">
+                  <input type="number" id="field-config-next-milestone" class="form-control" required min="0" placeholder="Ej: 6000" style="font-weight: 700; color: #031240;" />
+                  <span class="input-unit-badge">hrs</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label label-required" for="field-config-next-plan">Próximo Plan a Ejecutar</label>
+                <select id="field-config-next-plan" class="form-control" required>
+                  <option value="Plan A — 2000 horas">Plan A — 2000 horas</option>
+                  <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
+                  <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
+                  <option value="Plan A — 3000 horas">Plan A — 3000 horas</option>
+                  <option value="Plan B — 6000 horas">Plan B — 6000 horas</option>
+                  <option value="Plan C — 12000 horas">Plan C — 12000 horas</option>
+                  <option value="Overhaul">Overhaul</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección 4: Parámetros Predictivos & Umbrales -->
+          <div style="border-top: 1px dashed var(--color-border); padding-top: 1rem;">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--color-primary-dark); margin: 0 0 0.5rem;">
+              4. Estimación por Uso y Umbral de Alerta
+            </h4>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label" for="field-config-monthly-avg">
+                  Promedio de Horas Trabajadas / Mes
+                  <span class="form-hint">(Opcional)</span>
+                </label>
+                <div class="input-with-unit">
+                  <input type="number" id="field-config-monthly-avg" class="form-control" placeholder="Ej: 300" min="1" />
+                  <span class="input-unit-badge">hrs/mes</span>
+                </div>
+                <small class="form-hint" style="color: var(--color-text-muted); font-size: 0.75rem;">
+                  Permite proyectar la fecha estimada en que la máquina llegará al próximo hito.
+                </small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="field-config-alert-threshold">
+                  Umbral de Alerta Preventiva
+                  <span class="form-hint">(Por defecto: 200h)</span>
+                </label>
+                <div class="input-with-unit">
+                  <input type="number" id="field-config-alert-threshold" class="form-control" value="200" min="10" />
+                  <span class="input-unit-badge">hrs</span>
+                </div>
+                <small class="form-hint" style="color: var(--color-text-muted); font-size: 0.75rem;">
+                  Alerta como "Próximo por horas" cuando las horas restantes sean menores a este valor.
+                </small>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer" style="padding: 0.85rem 1.4rem; display: flex; justify-content: space-between; align-items: center; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+          <button type="button" class="btn btn-secondary" onclick="window.app.closeHorometerConfigModal()">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar Configuración</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 4: Historial de Lecturas y Mantenimientos -->
+  <div id="horometer-history-modal" class="modal-overlay">
+    <div class="modal-card modal-lg">
+      <div class="modal-header" style="background: linear-gradient(135deg, #031240 0%, #051A59 100%); color: white;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span style="font-size: 1.4rem;">📜</span>
+          <div>
+            <h3 style="color: white; margin: 0; font-size: 1.15rem;">Historial de Horómetros e Intervenciones</h3>
+            <p id="history-modal-machine-tag" style="color: #38BDF8; font-size: 0.8rem; margin: 0.15rem 0 0;">-</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeHorometerHistoryModal()">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem;">
+        <!-- Machine Comprehensive Diagnostic Sheet -->
+        <div class="equipment-sheet-header">
+          <div class="sheet-top-grid">
+            <div>
+              <span class="sheet-kicker">CLIENTE</span>
+              <div id="hist-stat-client" class="sheet-val-main">-</div>
+            </div>
+            <div>
+              <span class="sheet-kicker">MODELO &amp; CÓDIGO API</span>
+              <div id="hist-stat-model" class="sheet-val-text">-</div>
+            </div>
+            <div>
+              <span class="sheet-kicker">HORÓMETRO ACTUAL</span>
+              <div id="hist-stat-hours" class="sheet-val-accent">-</div>
+            </div>
+            <div>
+              <span class="sheet-kicker">CICLO DE SERVICIO</span>
+              <div id="hist-stat-cycle" class="sheet-val-badge">-</div>
+            </div>
+          </div>
+
+          <div class="sheet-middle-grid">
+            <div>
+              <span class="sheet-kicker">PRÓXIMO PLAN &amp; HITO</span>
+              <div id="hist-stat-next-plan" class="sheet-val-text">-</div>
+            </div>
+            <div>
+              <span class="sheet-kicker">HORAS RESTANTES</span>
+              <div id="hist-stat-hours-remaining" class="sheet-val-text">-</div>
+            </div>
+            <div>
+              <span class="sheet-kicker">FECHA TRIMESTRAL ESTIMADA</span>
+              <div id="hist-stat-quarterly-date" class="sheet-val-text">-</div>
+            </div>
+            <div>
+              <span class="sheet-kicker">ESTADO OPERACIONAL</span>
+              <div id="hist-stat-status-badge">-</div>
+            </div>
+          </div>
+
+          <!-- Alert Reason Callout Box -->
+          <div id="hist-stat-alert-box" class="sheet-alert-callout">
+            <span class="sheet-alert-icon" id="hist-stat-alert-icon">ℹ️</span>
+            <div class="sheet-alert-text" id="hist-stat-alert-reason">-</div>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+          <table class="custom-table" style="font-size: 0.85rem;">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Horómetro</th>
+                <th>Tipo de Evento</th>
+                <th>Plan Realizado</th>
+                <th>N° Reporte</th>
+                <th>Usuario / Técnico</th>
+                <th>Observaciones</th>
+              </tr>
+            </thead>
+            <tbody id="horometer-history-tbody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <div id="horometer-history-empty" style="display: none; padding: 2.5rem 1rem; text-align: center; color: var(--color-text-muted);">
+          <span style="font-size: 2rem;">📭</span>
+          <p style="margin-top: 0.5rem; font-size: 0.9rem;">No hay registros históricos de lecturas o mantenimientos para este equipo.</p>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 0.85rem 1.25rem; display: flex; justify-content: flex-end; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closeHorometerHistoryModal()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Dialog Modal -->
+  <div id="confirm-modal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); color: white; padding: 1rem 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span id="confirm-modal-icon" style="font-size: 1.35rem;">⚠️</span>
+          <h3 id="confirm-modal-title" style="color: white; margin: 0; font-size: 1.1rem; font-weight: 700;">Confirmación Requerida</h3>
+        </div>
+        <button type="button" class="btn-close-modal" id="confirm-modal-btn-close" style="color: white;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.35rem 1.25rem;">
+        <div id="confirm-modal-message" style="margin: 0; font-size: 0.93rem; line-height: 1.55; color: var(--color-text-main);"></div>
+      </div>
+      <div class="modal-footer" style="padding: 0.85rem 1.25rem; display: flex; justify-content: flex-end; gap: 0.65rem; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+        <button type="button" id="confirm-modal-btn-cancel" class="btn btn-secondary">Cancelar</button>
+        <button type="button" id="confirm-modal-btn-accept" class="btn btn-danger">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ========================================================================
+       Scripts: Vendors & Core Logic
+       ======================================================================== -->
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="vendor/jspdf.plugin.autotable.min.js"></script>
+  <script src="js/signature-pad.js"></script>
+  <script src="js/photo-manager.js"></script>
+  <script src="js/pdf-generator.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

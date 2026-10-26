@@ -1,0 +1,19 @@
+# Dependencias
+node_modules/
+package-lock.json
+
+# Archivos de entorno y credenciales
+.env
+.env.local
+.env.*.local
+*.log
+
+# Archivos generados
+data/pdfs/*.pdf
+!data/pdfs/.gitkeep
+
+# Archivos del sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

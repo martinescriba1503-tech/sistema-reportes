@@ -1,0 +1,137 @@
+{
+  "allTasks": [
+    { "id": "filtro_aceite", "name": "1 Filtro de Aceite", "category": "Filtros" },
+    { "id": "filtro_aire", "name": "1 Filtro de Aire", "category": "Filtros" },
+    { "id": "filtro_separador", "name": "1 Filtro Separador", "category": "Filtros" },
+    { "id": "cambio_aceite", "name": "Aceite Roto Xtend (5 L / 20 L)", "category": "Lubricación" },
+    { "id": "valvula_termostatica", "name": "Kit de válvula termostática", "category": "Válvulas" },
+    { "id": "valvula_minima_presion", "name": "Kit de válvula de mínima presión", "category": "Válvulas" },
+    { "id": "kits_drenaje_ld20", "name": "Kits de drenaje LD20", "category": "Drenajes" },
+    { "id": "valvula_admision", "name": "Mantenimiento de válvula de admisión", "category": "Válvulas" },
+    { "id": "valvula_check", "name": "Mantenimiento de válvula check", "category": "Válvulas" },
+    { "id": "valvula_oilstop", "name": "Mantenimiento de válvula oilstop", "category": "Válvulas" },
+    { "id": "trampa_agua", "name": "Mantenimiento de trampa de agua", "category": "Drenajes" },
+    { "id": "check_barrido", "name": "Cambio de check de barrido", "category": "Líneas" },
+    { "id": "limpieza_enfriador", "name": "Limpieza de enfriador", "category": "Refrigeración" },
+    { "id": "lavado_quimico_enfriador", "name": "Lavado químico de enfriador", "category": "Refrigeración" },
+    { "id": "ajuste_tablero", "name": "Ajuste de tablero eléctrico", "category": "Eléctrico" },
+    { "id": "otros_trabajos", "name": "Otros trabajos", "category": "General" }
+  ],
+  "defaultPlans": {
+    "Plan A — 2000 horas": {
+      "name": "Plan A — 2000 horas",
+      "hours": 2000,
+      "description": "Plan preventivo estándar de 2000 horas: Reemplazo de filtros primarios de lubricante y admisión.",
+      "autoLoadItems": [
+        "1 Filtro de Aceite",
+        "1 Filtro de Aire"
+      ],
+      "suggestedTasks": [
+        "filtro_aceite",
+        "filtro_aire"
+      ]
+    },
+    "Plan B — 4000 horas": {
+      "name": "Plan B — 4000 horas",
+      "hours": 4000,
+      "description": "Plan intermedio de 4000 horas: Filtración completa y cambio de lubricante sintético.",
+      "oilType": "Roto Xtend (20 L)",
+      "oilPresentations": ["5 L", "20 L"],
+      "autoLoadItems": [
+        "1 Filtro de Aceite",
+        "1 Filtro de Aire",
+        "1 Filtro Separador",
+        "Aceite Roto Xtend, con presentaciones de 5 L y 20 L"
+      ],
+      "suggestedTasks": [
+        "filtro_aceite",
+        "filtro_aire",
+        "filtro_separador",
+        "cambio_aceite"
+      ]
+    },
+    "Plan C — 8000 horas": {
+      "name": "Plan C — 8000 horas",
+      "hours": 8000,
+      "description": "Plan integral de 8000 horas: Filtración total, lubricante y reemplazo preventivo de kits de válvulas y drenajes.",
+      "oilType": "Roto Xtend (20 L)",
+      "oilPresentations": ["5 L", "20 L"],
+      "autoLoadItems": [
+        "1 Filtro de Aceite",
+        "1 Filtro de Aire",
+        "1 Filtro Separador",
+        "Aceite Roto Xtend, con presentaciones de 5 L y 20 L",
+        "Kit de válvula termostática",
+        "Kit de válvula de mínima presión",
+        "Kits de drenaje LD20"
+      ],
+      "suggestedTasks": [
+        "filtro_aceite",
+        "filtro_aire",
+        "filtro_separador",
+        "cambio_aceite",
+        "valvula_termostatica",
+        "valvula_minima_presion",
+        "kits_drenaje_ld20"
+      ]
+    },
+    "Overhaul": {
+      "name": "Overhaul",
+      "description": "Reacondicionamiento general mayor del compresor y componentes dinámicos.",
+      "autoLoadItems": [
+        "1 Filtro de Aceite",
+        "1 Filtro de Aire",
+        "1 Filtro Separador",
+        "Aceite Roto Xtend (5 L / 20 L)",
+        "Kit de válvula termostática",
+        "Kit de válvula de mínima presión",
+        "Kits de drenaje LD20",
+        "Mantenimiento de válvula de admisión"
+      ],
+      "suggestedTasks": [
+        "filtro_aceite",
+        "filtro_aire",
+        "filtro_separador",
+        "cambio_aceite",
+        "valvula_termostatica",
+        "valvula_minima_presion",
+        "kits_drenaje_ld20",
+        "valvula_admision",
+        "limpieza_enfriador",
+        "lavado_quimico_enfriador",
+        "ajuste_tablero"
+      ]
+    },
+    "Correctivo": {
+      "name": "Correctivo",
+      "description": "Servicio correctivo bajo demanda. Selección de tareas e insumos libre en campo.",
+      "autoLoadItems": [],
+      "suggestedTasks": []
+    },
+    "Otro": {
+      "name": "Otro",
+      "description": "Servicio especial, evaluación técnica o auditoría.",
+      "autoLoadItems": [],
+      "suggestedTasks": []
+    }
+  },
+  "customModelPlans": {
+    "Atlas Copco GA 37 VSD+": {
+      "Plan B — 4000 horas": [
+        "filtro_aceite",
+        "filtro_aire",
+        "filtro_separador",
+        "cambio_aceite"
+      ],
+      "Plan C — 8000 horas": [
+        "filtro_aceite",
+        "filtro_aire",
+        "filtro_separador",
+        "cambio_aceite",
+        "valvula_termostatica",
+        "valvula_minima_presion",
+        "kits_drenaje_ld20"
+      ]
+    }
+  }
+}
