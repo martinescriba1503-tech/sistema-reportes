@@ -1621,12 +1621,15 @@ class IndustracApp {
 
         this.updateSyncStatus('Guardado en servidor');
         if (showToast) this.showToast('Borrador guardado exitosamente en el servidor.', 'success');
+        return true;
       } else {
         this.updateSyncStatus('Guardado localmente');
+        return false;
       }
     } catch (err) {
       this.updateSyncStatus('Modo Offline (Guardado local)');
       if (showToast) this.showToast('Borrador guardado en la memoria de este dispositivo.', 'info');
+      return false;
     }
   }
 
@@ -1900,7 +1903,10 @@ class IndustracApp {
       this.reportData.status = 'Finalizado';
 
       // 3. Persist metadata to server first and guarantee correlativo synchronization
-      await this.saveDraft(false);
+      const savedOk = await this.saveDraft(false);
+      if (!savedOk) {
+        this.showToast('Aviso: El reporte no pudo sincronizarse con el servidor. Se generará el PDF localmente.', 'warning');
+      }
 
       // Verify confirmed report number
       const confirmedNumber = (this.reportData.reportNumber && this.reportData.reportNumber !== 'AUTO') 
@@ -2137,7 +2143,7 @@ class IndustracApp {
       return `
         <tr>
           <td><strong>${rep.reportNumber}</strong></td>
-          <td>${rep.date || 'N/A'}</td>
+          <td>${rep.date ? this.formatDateSpanish(rep.date) : 'N/A'}</td>
           <td>${rep.client || 'Sin cliente'}</td>
           <td>${rep.model || 'N/A'}</td>
           <td><code>${rep.apiCode || rep.serialNumber || 'N/A'}</code></td>
@@ -2608,7 +2614,7 @@ class IndustracApp {
           tbody.innerHTML = reports.map(r => `
             <tr>
               <td><strong>${r.reportNumber || 'REP-AUTO'}</strong></td>
-              <td>${r.date || 'N/A'}</td>
+              <td>${r.date ? this.formatDateSpanish(r.date) : 'N/A'}</td>
               <td>${r.technician || 'N/A'}</td>
               <td>${r.maintenanceType || 'Mantenimiento'}</td>
               <td>${r.hourMeter || '0'} hrs</td>

@@ -1346,6 +1346,16 @@ function applyReportToEquipmentHorometer(report) {
     notes: latestMaint.notes || `Reporte técnico ${repNumber} finalizado.`
   };
 
+  // Sincronizar fecha de última lectura/servicio con la entrada más reciente del historial
+  const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  if (allReadings.length > 0 && allReadings[0].date) {
+    if (!eq.lastReadingDate || new Date(allReadings[0].date) >= new Date(eq.lastReadingDate)) {
+      eq.lastReadingDate = allReadings[0].date;
+    }
+  }
+
+
+
   // Recalcular secuencia y próximo hito a partir del historial acumulado
   const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
   eq.nextMaintenance = {
