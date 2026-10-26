@@ -162,7 +162,7 @@
               </div>
               <div id="equipment-selected-tag" class="equipment-selected-tag" style="display: none;">
                 <div>
-                  <span class="api-code-badge demo-code" id="tag-selected-api-code">-</span>
+                  <span class="api-code-badge" id="tag-selected-api-code">-</span>
                   <span style="margin-left: 0.5rem; font-weight: 600;" id="tag-selected-info">-</span>
                 </div>
                 <button type="button" class="btn-clear-selection" title="Desvincular máquina del reporte" onclick="window.app.clearEquipmentSelection()">✕ Desvincular</button>
@@ -261,7 +261,7 @@
                 <label class="form-label label-required" for="field-api-code">
                   API / ID Máquina
                 </label>
-                <input type="text" id="field-api-code" class="form-control" placeholder="Ej: DEMO-CDS-001" required />
+                <input type="text" id="field-api-code" class="form-control" placeholder="Ej: API 505735" required />
               </div>
 
               <!-- Modelo del compresor -->
@@ -1098,9 +1098,6 @@
             </p>
           </div>
           <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
-            <button type="button" id="btn-demo-manager" class="btn btn-secondary">
-              🧪 Simulación &amp; Demo
-            </button>
             <button type="button" id="btn-new-client" class="btn btn-secondary">
               ＋ Nuevo Cliente
             </button>
@@ -1190,7 +1187,6 @@
                   <option value="all">Todos los Estados</option>
                   <option value="Activo">Solo Activos</option>
                   <option value="Inactivo">Solo Inactivos</option>
-                  <option value="demo">Solo Demo / Simulación</option>
                 </select>
               </div>
             </div>
@@ -1252,36 +1248,8 @@
         </div>
 
         <div class="horometer-header-actions">
-          <!-- Segmented Mode Switcher (Datos Reales vs Modo Demostración) -->
-          <div class="horometer-mode-segmented" id="horometer-mode-switcher">
-            <button type="button" class="mode-pill-btn active" id="btn-mode-real" onclick="window.app.setHorometerMode('real')">
-              🏢 Datos Reales (<span id="mode-count-real">0</span>)
-            </button>
-            <button type="button" class="mode-pill-btn" id="btn-mode-demo" onclick="window.app.setHorometerMode('demo')">
-              🧪 Modo Demostración (<span id="mode-count-demo">0</span>)
-            </button>
-          </div>
-
           <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.loadHorometersData()" title="Refrescar datos">
-            🔄 Actualizar
-          </button>
-        </div>
-      </div>
-
-      <!-- Demo Mode Alert Banner (Visible only in Demo Mode) -->
-      <div id="horometers-demo-banner" class="demo-banner-strip" style="display: none;">
-        <div class="demo-banner-left">
-          <span class="demo-tag-pill">🧪 MODO DEMOSTRACIÓN ACTIVO</span>
-          <span class="demo-banner-text">
-            Visualizando equipos simulados. <strong>Los datos demostrativos no alteran el catálogo real ni se envían a Google Sheets o Drive.</strong>
-          </span>
-        </div>
-        <div class="demo-banner-right">
-          <button type="button" class="btn btn-xs btn-outline-light" onclick="window.app.resetDemoHorometers()" title="Restaura la simulación a sus valores de fábrica">
-            ↺ Reiniciar Demo
-          </button>
-          <button type="button" class="btn btn-xs btn-light" onclick="window.app.setHorometerMode('real')">
-            ✕ Volver a Reales
+            🔄 Actualizar Tablero
           </button>
         </div>
       </div>
@@ -1491,7 +1459,7 @@
               <label class="form-label label-required" for="modal-eq-api-code">
                 2. API / ID Máquina
               </label>
-              <input type="text" id="modal-eq-api-code" class="form-control" placeholder="DEMO-LAV-001" required />
+              <input type="text" id="modal-eq-api-code" class="form-control" placeholder="Ej: API 505735" required />
             </div>
 
             <!-- 3. Fabricante -->
@@ -1581,7 +1549,7 @@
       <div class="modal-header" style="background: linear-gradient(135deg, #031240 0%, #051A59 100%); color: white;">
         <div>
           <div style="display: flex; align-items: center; gap: 0.65rem;">
-            <span class="api-code-badge demo-code" id="detail-badge-api-code" style="font-size: 0.85rem;">DEMO-001</span>
+            <span class="api-code-badge" id="detail-badge-api-code" style="font-size: 0.85rem;">-</span>
             <h3 id="detail-modal-title" style="color: white; margin: 0; font-size: 1.2rem;">Ficha Técnica de Equipo</h3>
             <span id="detail-badge-status" class="badge-status active">Activo</span>
           </div>
@@ -1735,57 +1703,7 @@
     </div>
   </div>
 
-  <!-- Demo Simulator Modal (Administrar Datos de Demostración) -->
-  <div id="demo-manager-modal" class="modal-overlay">
-    <div class="modal-card">
-      <div class="modal-header" style="background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%); color: white;">
-        <div style="display: flex; align-items: center; gap: 0.65rem;">
-          <span style="font-size: 1.4rem;">🧪</span>
-          <div>
-            <h3 style="color: white; margin: 0; font-size: 1.15rem;">Simulador de Catálogo de Equipos</h3>
-            <p style="color: #A5B4FC; font-size: 0.78rem; margin: 0.15rem 0 0;">Control de datos de prueba y demostración técnica INDUSTRAC</p>
-          </div>
-        </div>
-        <button type="button" class="btn-close-modal" style="color: white;" onclick="window.app.closeDemoManagerModal()">✕</button>
-      </div>
-      <div class="modal-body" style="padding: 1.5rem;">
-        <div style="background: #F8FAFC; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
-          <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--color-primary-dark); margin-bottom: 0.5rem;">
-            Clientes y Compresores de Demostración Configurados:
-          </h4>
-          <ul style="font-size: 0.82rem; color: var(--color-text-main); margin-left: 1.25rem; line-height: 1.6;">
-            <li><strong>Lavarecina:</strong> 3 equipos (GA 75, GA 37, GA 22) • Códigos: <code>DEMO-LAV-001..003</code></li>
-            <li><strong>Científica del Sur:</strong> 4 equipos (GA 75 VSD+, GA 37, GA 22, GA 30) • Códigos: <code>DEMO-CDS-001..004</code></li>
-            <li><strong>Molitalia:</strong> 3 equipos (GA 45 VSD+, GA 55, GA 75) • Códigos: <code>DEMO-MOL-001..003</code></li>
-            <li><strong>QROMA:</strong> 3 equipos (GA 37, GA 55 VSD, GA 90) • Códigos: <code>DEMO-QRO-001..003</code></li>
-            <li><strong>FAMECA:</strong> 2 equipos (GA 45, GA 75 VSD+) • Códigos: <code>DEMO-FAM-001..002</code></li>
-          </ul>
-          <p style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 0.75rem; border-top: 1px dashed var(--color-border); padding-top: 0.5rem;">
-            💡 <em>Total: 5 clientes y 15 equipos ficticios con códigos API únicos para simular la operación.</em>
-          </p>
-        </div>
 
-        <div id="demo-status-summary" style="margin-bottom: 1.25rem; font-size: 0.85rem;">
-          <!-- Loaded dynamically -->
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-          <button type="button" class="btn btn-primary" style="width: 100%;" onclick="window.app.loadDemoData()">
-            🔄 Cargar / Restaurar Datos de Simulación (15 Equipos)
-          </button>
-          <button type="button" class="btn btn-danger" style="width: 100%;" onclick="window.app.clearDemoData()">
-            🧹 Limpiar Únicamente Registros de Demostración
-          </button>
-          <p style="font-size: 0.75rem; color: var(--color-text-muted); text-align: center;">
-            🛡️ La limpieza de simulación preserva al 100% sus clientes, equipos y reportes reales.
-          </p>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="window.app.closeDemoManagerModal()">Cerrar</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Google Sheets Integration Modal -->
   <div id="google-sheets-modal" class="modal-overlay">

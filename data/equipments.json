@@ -24,7 +24,7 @@
       "hourMeter": 130001,
       "plan": "Plan A — 2000 horas",
       "reportNumber": "REP-2026-0007",
-      "notes": "Vinculado automáticamente desde historial de reportes."
+      "notes": "Historial verificado: Plan A — 2000 horas"
     },
     "nextMaintenance": {
       "milestoneHours": 132000,
@@ -35,13 +35,27 @@
         "id": "hist-boot-rep-1792974692726-3d8shs",
         "date": "2026-10-25",
         "hourMeter": 130001,
+        "hours": 130001,
         "type": "mantenimiento",
         "plan": "Plan A — 2000 horas",
         "reportNumber": "REP-2026-0007",
-        "notes": "Historial inicial registrado: Plan A — 2000 horas",
+        "notes": "Historial verificado: Plan A — 2000 horas",
+        "user": "Técnico INDUSTRAC"
+      },
+      {
+        "id": "hist-boot-rep-1792973108083-td97ih",
+        "date": "2026-10-25",
+        "hourMeter": 130001,
+        "hours": 130001,
+        "type": "mantenimiento",
+        "plan": "Plan A — 2000 horas",
+        "reportNumber": "REP-2026-0005",
+        "notes": "Historial verificado: Plan A — 2000 horas",
         "user": "Técnico INDUSTRAC"
       }
-    ]
+    ],
+    "hours": 130001,
+    "lastReadingDate": "2026-10-25"
   },
   {
     "id": "eq-1791822487166",
@@ -68,7 +82,7 @@
       "hourMeter": 100064,
       "plan": "Plan A — 2000 horas",
       "reportNumber": "REP-2026-0020",
-      "notes": "Reporte técnico REP-2026-0020 finalizado."
+      "notes": "Historial verificado: Plan A — 2000 horas"
     },
     "nextMaintenance": {
       "milestoneHours": 102000,
@@ -79,24 +93,39 @@
         "id": "maint-1792987582453-o85j1",
         "date": "2026-10-25",
         "hourMeter": 100064,
+        "hours": 100064,
         "type": "mantenimiento",
         "plan": "Plan A — 2000 horas",
         "reportNumber": "REP-2026-0020",
-        "notes": "Servicio técnico finalizado: Plan A — 2000 horas",
+        "notes": "Historial verificado: Plan A — 2000 horas",
         "user": "CARLOS GIOVANNY OJEDA CAMARGO"
       },
       {
         "id": "hist-boot-rep-1792977885627-jyzhb0",
         "date": "2026-10-25",
         "hourMeter": 99726,
+        "hours": 99726,
         "type": "mantenimiento",
         "plan": "Plan B — 4000 horas",
         "reportNumber": "REP-2026-0008",
-        "notes": "Historial inicial registrado: Plan B — 4000 horas",
+        "notes": "Historial verificado: Plan B — 4000 horas",
         "user": "Ing. Martin Escriba"
+      },
+      {
+        "id": "hist-boot-rep-1792974168476-lw5lus",
+        "date": "2026-10-25",
+        "hourMeter": 99726,
+        "hours": 99726,
+        "type": "mantenimiento",
+        "plan": "Plan A — 2000 horas",
+        "reportNumber": "REP-2026-0006",
+        "notes": "Historial verificado: Plan A — 2000 horas",
+        "user": "ABEL ELIAS LUNA YSIDRO"
       }
     ],
-    "lastReadingDate": "2026-10-25"
+    "lastReadingDate": "2026-10-26",
+    "hours": 100064,
+    "updatedAt": "2026-10-26T16:55:56.732Z"
   },
   {
     "id": "eq-1791822719857",
@@ -165,10 +194,11 @@
         "id": "maint-1792986432951-umch9",
         "date": "2026-10-25",
         "hourMeter": 0,
+        "hours": 0,
         "type": "mantenimiento",
         "plan": "Plan B — 4000 horas",
         "reportNumber": "REP-2026-0018",
-        "notes": "Servicio técnico finalizado: Plan B — 4000 horas",
+        "notes": "Historial verificado: Plan B — 4000 horas",
         "user": "ABEL ELIAS LUNA YSIDRO"
       }
     ],
@@ -177,12 +207,14 @@
       "hourMeter": 0,
       "plan": "Plan B — 4000 horas",
       "reportNumber": "REP-2026-0018",
-      "notes": "Reporte técnico REP-2026-0018 finalizado."
+      "notes": "Historial verificado: Plan B — 4000 horas"
     },
     "nextMaintenance": {
       "milestoneHours": 2000,
       "plan": "Plan A — 2000 horas"
-    }
+    },
+    "hours": 0,
+    "lastReadingDate": "2026-10-25"
   },
   {
     "id": "eq-emusa-com-265485",
@@ -209,7 +241,7 @@
       "hourMeter": 0,
       "plan": "Plan C — 8000 horas",
       "reportNumber": "REP-2026-0010",
-      "notes": "Vinculado automáticamente desde historial de reportes."
+      "notes": "Historial verificado: Plan C — 8000 horas"
     },
     "nextMaintenance": {
       "milestoneHours": 2000,
@@ -220,13 +252,16 @@
         "id": "hist-boot-rep-1792980672523-0aclzz",
         "date": "2026-10-25",
         "hourMeter": 0,
+        "hours": 0,
         "type": "mantenimiento",
         "plan": "Plan C — 8000 horas",
         "reportNumber": "REP-2026-0010",
-        "notes": "Historial inicial registrado: Plan C — 8000 horas",
+        "notes": "Historial verificado: Plan C — 8000 horas",
         "user": "ABEL ELIAS LUNA YSIDRO"
       }
-    ]
+    ],
+    "hours": 0,
+    "lastReadingDate": "2026-10-25"
   },
   {
     "id": "eq-emusa-p1-501850",
@@ -292,825 +327,5 @@
     "notes": "Compresor Atlas Copco GA45+. Módulo tipo MKS-II.",
     "isDemo": false,
     "createdAt": "2026-10-24T13:25:00.000Z"
-  },
-  {
-    "id": "eq-demo-lav-001",
-    "clientId": "cli-demo-lavarecina",
-    "client": "Lavarecina",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 75",
-    "serialNumber": "DEMO-SN-LAV-001",
-    "apiCode": "DEMO-LAV-001",
-    "controller": "Elektronikon Touch",
-    "pressure": "7.5 bar",
-    "airflow": "460 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "5850",
-    "hours": 5850,
-    "location": "Sala de Compresores Principal",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 250,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-08-10",
-      "hourMeter": 4000,
-      "plan": "Plan B — 4000 horas",
-      "reportNumber": "REP-DEMO-001",
-      "notes": "Cambio de filtro de aire, filtro de aceite y separador. Nivel de aceite verificado."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 6000,
-      "plan": "Plan A — 2000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-1",
-        "date": "2026-10-18",
-        "hourMeter": 5850,
-        "hours": 5850,
-        "type": "reading",
-        "notes": "Lectura rutinaria quincenal",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-2",
-        "date": "2026-09-15",
-        "hourMeter": 5200,
-        "hours": 5200,
-        "type": "reading",
-        "notes": "Lectura mensual de control",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-3",
-        "date": "2026-08-10",
-        "hourMeter": 4000,
-        "hours": 4000,
-        "type": "maintenance",
-        "plan": "Plan B — 4000 horas",
-        "reportNumber": "REP-DEMO-001",
-        "technician": "GINO GREGORIO SILVA CLEMENTE",
-        "notes": "Mantenimiento preventivo de 4000h"
-      }
-    ],
-    "notes": "Compresor principal de planta. Operando a plena carga.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-lav-002",
-    "clientId": "cli-demo-lavarecina",
-    "client": "Lavarecina",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 37",
-    "serialNumber": "DEMO-SN-LAV-002",
-    "apiCode": "DEMO-LAV-002",
-    "controller": "Elektronikon MkIV",
-    "pressure": "8.0 bar",
-    "airflow": "230 cfm",
-    "oilType": "Roto Xtend Duty",
-    "hourMeter": "4120",
-    "hours": 4120,
-    "location": "Sala de Compresores Principal",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 180,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-04-15",
-      "hourMeter": 2000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-002",
-      "notes": "Mantenimiento inicial de 2000 horas."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 4000,
-      "plan": "Plan B — 4000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-4",
-        "date": "2026-10-20",
-        "hourMeter": 4120,
-        "hours": 4120,
-        "type": "reading",
-        "notes": "Lectura mensual",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-5",
-        "date": "2026-04-15",
-        "hourMeter": 2000,
-        "hours": 2000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-002",
-        "technician": "ABEL ELIAS LUNA YSIDRO",
-        "notes": "Mantenimiento Plan A"
-      }
-    ],
-    "notes": "Superó hito de 4,000h y fecha trimestral excedida. Requiere servicio urgente.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-lav-003",
-    "clientId": "cli-demo-lavarecina",
-    "client": "Lavarecina",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 22",
-    "serialNumber": "DEMO-SN-LAV-003",
-    "apiCode": "DEMO-LAV-003",
-    "controller": "Elektronikon Basic",
-    "pressure": "7.5 bar",
-    "airflow": "135 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "2150",
-    "hours": 2150,
-    "location": "Línea Auxiliar de Envasado",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 120,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-09-20",
-      "hourMeter": 2000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-003",
-      "notes": "Servicio preventivo ejecutado recientemente."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 4000,
-      "plan": "Plan B — 4000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-6",
-        "date": "2026-10-10",
-        "hourMeter": 2150,
-        "hours": 2150,
-        "type": "reading",
-        "notes": "Control de rutina",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-7",
-        "date": "2026-09-20",
-        "hourMeter": 2000,
-        "hours": 2000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-003",
-        "technician": "CARLOS GIOVANNY OJEDA CAMARGO",
-        "notes": "Plan A 2000h"
-      }
-    ],
-    "notes": "Equipo al día. Próximo mantenimiento en 4,000h.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-cds-001",
-    "clientId": "cli-demo-cientifica",
-    "client": "Científica del Sur",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 75 VSD+",
-    "serialNumber": "DEMO-SN-CDS-001",
-    "apiCode": "DEMO-CDS-001",
-    "controller": "Elektronikon Touch",
-    "pressure": "8.5 bar",
-    "airflow": "470 cfm",
-    "oilType": "Roto Xtend Duty",
-    "hourMeter": "6080",
-    "hours": 6080,
-    "location": "Caseta Central de Fuerza",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_3000",
-    "cycleType": "ciclo_3000",
-    "monthlyAverageHours": 280,
-    "alertThresholdHours": 250,
-    "lastMaintenance": {
-      "date": "2026-06-05",
-      "hourMeter": 3000,
-      "plan": "Plan A — 3000 horas",
-      "reportNumber": "REP-DEMO-004",
-      "notes": "Mantenimiento inicial de ciclo especial 3000h."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 6000,
-      "plan": "Plan B — 6000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-8",
-        "date": "2026-10-22",
-        "hourMeter": 6080,
-        "hours": 6080,
-        "type": "reading",
-        "notes": "Lectura reciente",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-9",
-        "date": "2026-06-05",
-        "hourMeter": 3000,
-        "hours": 3000,
-        "type": "maintenance",
-        "plan": "Plan A — 3000 horas",
-        "reportNumber": "REP-DEMO-004",
-        "technician": "GINO GREGORIO SILVA CLEMENTE",
-        "notes": "Plan A 3000h"
-      }
-    ],
-    "notes": "Ciclo especial 3,000h / 6,000h / 12,000h. Vencido por horas y fecha para Plan B.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-cds-002",
-    "clientId": "cli-demo-cientifica",
-    "client": "Científica del Sur",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 37",
-    "serialNumber": "DEMO-SN-CDS-002",
-    "apiCode": "DEMO-CDS-002",
-    "controller": "Elektronikon MkIV",
-    "pressure": "7.5 bar",
-    "airflow": "235 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "7920",
-    "hours": 7920,
-    "location": "Laboratorios de Ingeniería",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 220,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-08-25",
-      "hourMeter": 6000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-005",
-      "notes": "Servicio de 6000 horas completado."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 8000,
-      "plan": "Plan C — 8000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-10",
-        "date": "2026-10-15",
-        "hourMeter": 7920,
-        "hours": 7920,
-        "type": "reading",
-        "notes": "A solo 80h de Mantenimiento Mayor Plan C",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-11",
-        "date": "2026-08-25",
-        "hourMeter": 6000,
-        "hours": 6000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-005",
-        "technician": "ABEL ELIAS LUNA YSIDRO",
-        "notes": "Plan A 6000h"
-      }
-    ],
-    "notes": "Atención Prioritaria: A 80 horas de Plan C Mayor (8,000h). Preparar kits de válvulas.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-cds-003",
-    "clientId": "cli-demo-cientifica",
-    "client": "Científica del Sur",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 22",
-    "serialNumber": "DEMO-SN-CDS-003",
-    "apiCode": "DEMO-CDS-003",
-    "controller": "Elektronikon Basic",
-    "pressure": "7.5 bar",
-    "airflow": "130 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "3200",
-    "hours": 3200,
-    "location": "Taller Mecánico Experimental",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 150,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-06-10",
-      "hourMeter": 2000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-006",
-      "notes": "Mantenimiento inicial."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 4000,
-      "plan": "Plan B — 4000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-12",
-        "date": "2026-10-12",
-        "hourMeter": 3200,
-        "hours": 3200,
-        "type": "reading",
-        "notes": "Lectura mensual",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-13",
-        "date": "2026-06-10",
-        "hourMeter": 2000,
-        "hours": 2000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-006",
-        "technician": "CARLOS GIOVANNY OJEDA CAMARGO",
-        "notes": "Plan A 2000h"
-      }
-    ],
-    "notes": "Vencido por fecha trimestral (hace 45 días), aunque quedan 800h para el hito.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-cds-004",
-    "clientId": "cli-demo-cientifica",
-    "client": "Científica del Sur",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 30",
-    "serialNumber": "DEMO-SN-CDS-004",
-    "apiCode": "DEMO-CDS-004",
-    "controller": "Elektronikon Touch",
-    "pressure": "7.5 bar",
-    "airflow": "185 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "1450",
-    "hours": 1450,
-    "location": "Pabellón de Simulación Médica",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "lastMaintenance": null,
-    "nextMaintenance": null,
-    "readingsHistory": [
-      {
-        "id": "rh-14",
-        "date": "2026-10-05",
-        "hourMeter": 1450,
-        "hours": 1450,
-        "type": "reading",
-        "notes": "Toma inicial de datos",
-        "registeredBy": "Téc. Demostración"
-      }
-    ],
-    "notes": "Equipo sin línea base configurada (Pendiente de Configuración).",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-mol-001",
-    "clientId": "cli-demo-molitalia",
-    "client": "Molitalia",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 45 VSD+",
-    "serialNumber": "DEMO-SN-MOL-001",
-    "apiCode": "DEMO-MOL-001",
-    "controller": "Elektronikon Touch",
-    "pressure": "8.0 bar",
-    "airflow": "290 cfm",
-    "oilType": "Roto Xtend Duty",
-    "hourMeter": "8050",
-    "hours": 8050,
-    "location": "Planta de Galletería",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 350,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-08-30",
-      "hourMeter": 6000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-007",
-      "notes": "Mantenimiento de 6000h."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 8000,
-      "plan": "Plan C — 8000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-15",
-        "date": "2026-10-24",
-        "hourMeter": 8050,
-        "hours": 8050,
-        "type": "reading",
-        "notes": "Superó hito de 8000h",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-16",
-        "date": "2026-08-30",
-        "hourMeter": 6000,
-        "hours": 6000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-007",
-        "technician": "GINO GREGORIO SILVA CLEMENTE",
-        "notes": "Plan A 6000h"
-      }
-    ],
-    "notes": "Vencido por horas: alcanzó 8,050h (+50h de exceso). Requiere Plan C Mayor urgente.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-mol-002",
-    "clientId": "cli-demo-molitalia",
-    "client": "Molitalia",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 55",
-    "serialNumber": "DEMO-SN-MOL-002",
-    "apiCode": "DEMO-MOL-002",
-    "controller": "Elektronikon MkIV",
-    "pressure": "7.5 bar",
-    "airflow": "345 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "10400",
-    "hours": 10400,
-    "location": "Planta de Harinas y Fideos",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 250,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-09-28",
-      "hourMeter": 10000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-008",
-      "notes": "Servicio de 10000h completado según pauta."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 12000,
-      "plan": "Plan B — 4000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-17",
-        "date": "2026-10-20",
-        "hourMeter": 10400,
-        "hours": 10400,
-        "type": "reading",
-        "notes": "Lectura mensual",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-18",
-        "date": "2026-09-28",
-        "hourMeter": 10000,
-        "hours": 10000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-008",
-        "technician": "ABEL ELIAS LUNA YSIDRO",
-        "notes": "Plan A 10000h"
-      }
-    ],
-    "notes": "Segundo ciclo de 8,000h. Operando al día hacia hito de 12,000h (Plan B).",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-mol-003",
-    "clientId": "cli-demo-molitalia",
-    "client": "Molitalia",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 75",
-    "serialNumber": "DEMO-SN-MOL-003",
-    "apiCode": "DEMO-MOL-003",
-    "controller": "Elektronikon Touch",
-    "pressure": "8.0 bar",
-    "airflow": "460 cfm",
-    "oilType": "Roto Xtend Duty",
-    "hourMeter": "3960",
-    "hours": 3960,
-    "location": "Sala Central de Compresores",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 300,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-08-01",
-      "hourMeter": 2000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-009",
-      "notes": "Mantenimiento inicial."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 4000,
-      "plan": "Plan B — 4000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-19",
-        "date": "2026-10-24",
-        "hourMeter": 3960,
-        "hours": 3960,
-        "type": "reading",
-        "notes": "A 40h del hito y a 7 días de fecha trimestral",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-20",
-        "date": "2026-08-01",
-        "hourMeter": 2000,
-        "hours": 2000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-009",
-        "technician": "CARLOS GIOVANNY OJEDA CAMARGO",
-        "notes": "Plan A 2000h"
-      }
-    ],
-    "notes": "Próximo por horas y fecha. Restan solo 40h para Plan B.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-qro-001",
-    "clientId": "cli-demo-qroma",
-    "client": "QROMA",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 37",
-    "serialNumber": "DEMO-SN-QRO-001",
-    "apiCode": "DEMO-QRO-001",
-    "controller": "Elektronikon Touch",
-    "pressure": "7.5 bar",
-    "airflow": "230 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "6300",
-    "hours": 6300,
-    "location": "Área de Pinturas Líquidas",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 210,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-07-02",
-      "hourMeter": 4000,
-      "plan": "Plan B — 4000 horas",
-      "reportNumber": "REP-DEMO-010",
-      "notes": "Mantenimiento Plan B."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 6000,
-      "plan": "Plan A — 2000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-21",
-        "date": "2026-10-23",
-        "hourMeter": 6300,
-        "hours": 6300,
-        "type": "reading",
-        "notes": "Superó 6,000h por 300h",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-22",
-        "date": "2026-07-02",
-        "hourMeter": 4000,
-        "hours": 4000,
-        "type": "maintenance",
-        "plan": "Plan B — 4000 horas",
-        "reportNumber": "REP-DEMO-010",
-        "technician": "GINO GREGORIO SILVA CLEMENTE",
-        "notes": "Plan B 4000h"
-      }
-    ],
-    "notes": "Vencido por ambos criterios: +300h y fecha trimestral superada.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-qro-002",
-    "clientId": "cli-demo-qroma",
-    "client": "QROMA",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 55 VSD",
-    "serialNumber": "DEMO-SN-QRO-002",
-    "apiCode": "DEMO-QRO-002",
-    "controller": "Elektronikon Touch",
-    "pressure": "8.5 bar",
-    "airflow": "350 cfm",
-    "oilType": "Roto Xtend Duty",
-    "hourMeter": "11820",
-    "hours": 11820,
-    "location": "Área de Resinas Industriales",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_3000",
-    "cycleType": "ciclo_3000",
-    "monthlyAverageHours": 290,
-    "alertThresholdHours": 250,
-    "lastMaintenance": {
-      "date": "2026-08-15",
-      "hourMeter": 9000,
-      "plan": "Plan A — 3000 horas",
-      "reportNumber": "REP-DEMO-011",
-      "notes": "Servicio de 9000h ciclo 3k."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 12000,
-      "plan": "Plan C — 12000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-23",
-        "date": "2026-10-21",
-        "hourMeter": 11820,
-        "hours": 11820,
-        "type": "reading",
-        "notes": "A solo 180h del Mantenimiento Mayor de 12,000h",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-24",
-        "date": "2026-08-15",
-        "hourMeter": 9000,
-        "hours": 9000,
-        "type": "maintenance",
-        "plan": "Plan A — 3000 horas",
-        "reportNumber": "REP-DEMO-011",
-        "technician": "ABEL ELIAS LUNA YSIDRO",
-        "notes": "Plan A 9000h ciclo especial"
-      }
-    ],
-    "notes": "Ciclo especial 12,000h. Próximo a Mantenimiento Mayor Plan C (restan 180h).",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-qro-003",
-    "clientId": "cli-demo-qroma",
-    "client": "QROMA",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 90",
-    "serialNumber": "DEMO-SN-QRO-003",
-    "apiCode": "DEMO-QRO-003",
-    "controller": "Elektronikon MkIV",
-    "pressure": "7.5 bar",
-    "airflow": "560 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "5100",
-    "hours": 5100,
-    "location": "Casa de Fuerza General",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 230,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-10-10",
-      "hourMeter": 4000,
-      "plan": "Plan B — 4000 horas",
-      "reportNumber": "REP-DEMO-012",
-      "notes": "Mantenimiento Plan B ejecutado recientemente."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 6000,
-      "plan": "Plan A — 2000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-25",
-        "date": "2026-10-22",
-        "hourMeter": 5100,
-        "hours": 5100,
-        "type": "reading",
-        "notes": "Lectura rutinaria",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-26",
-        "date": "2026-10-10",
-        "hourMeter": 4000,
-        "hours": 4000,
-        "type": "maintenance",
-        "plan": "Plan B — 4000 horas",
-        "reportNumber": "REP-DEMO-012",
-        "technician": "CARLOS GIOVANNY OJEDA CAMARGO",
-        "notes": "Plan B 4000h"
-      }
-    ],
-    "notes": "Equipo al día. Próximo hito 6,000h (Plan A).",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-fam-001",
-    "clientId": "cli-demo-fameca",
-    "client": "FAMECA",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 45",
-    "serialNumber": "DEMO-SN-FAM-001",
-    "apiCode": "DEMO-FAM-001",
-    "controller": "Elektronikon Basic",
-    "pressure": "7.5 bar",
-    "airflow": "280 cfm",
-    "oilType": "Roto Inject Fluid",
-    "hourMeter": "4000",
-    "hours": 4000,
-    "location": "Nave de Mecanizado CNC",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "monthlyAverageHours": 200,
-    "alertThresholdHours": 200,
-    "lastMaintenance": {
-      "date": "2026-08-20",
-      "hourMeter": 2000,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-DEMO-013",
-      "notes": "Mantenimiento inicial Plan A."
-    },
-    "nextMaintenance": {
-      "milestoneHours": 4000,
-      "plan": "Plan B — 4000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "rh-27",
-        "date": "2026-10-25",
-        "hourMeter": 4000,
-        "hours": 4000,
-        "type": "reading",
-        "notes": "Horómetro alcanzó exactamente 4,000h",
-        "registeredBy": "Téc. Demostración"
-      },
-      {
-        "id": "rh-28",
-        "date": "2026-08-20",
-        "hourMeter": 2000,
-        "hours": 2000,
-        "type": "maintenance",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-DEMO-013",
-        "technician": "GINO GREGORIO SILVA CLEMENTE",
-        "notes": "Plan A 2000h"
-      }
-    ],
-    "notes": "Vencido por horas exactas (0h restantes). Requiere Plan B.",
-    "isDemo": true
-  },
-  {
-    "id": "eq-demo-fam-002",
-    "clientId": "cli-demo-fameca",
-    "client": "FAMECA",
-    "manufacturer": "Atlas Copco",
-    "model": "GA 75 VSD+",
-    "serialNumber": "DEMO-SN-FAM-002",
-    "apiCode": "DEMO-FAM-002",
-    "controller": "Elektronikon Touch",
-    "pressure": "8.0 bar",
-    "airflow": "465 cfm",
-    "oilType": "Roto Xtend Duty",
-    "hourMeter": "5500",
-    "hours": 5500,
-    "location": "Línea de Ensamble y Granallado",
-    "status": "Activo",
-    "active": true,
-    "maintenanceCycle": "ciclo_2000",
-    "cycleType": "ciclo_2000",
-    "lastMaintenance": null,
-    "nextMaintenance": null,
-    "readingsHistory": [
-      {
-        "id": "rh-29",
-        "date": "2026-10-18",
-        "hourMeter": 5500,
-        "hours": 5500,
-        "type": "reading",
-        "notes": "Inspección visual en planta",
-        "registeredBy": "Téc. Demostración"
-      }
-    ],
-    "notes": "Equipo sin línea base configurada (Pendiente de Configuración).",
-    "isDemo": true
   }
 ]

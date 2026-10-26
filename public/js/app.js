@@ -1866,6 +1866,20 @@ class IndustracApp {
       return;
     }
 
+    // Check mandatory hourMeter field
+    const rawHours = String(this.reportData.hourMeter || '').trim();
+    if (!rawHours || isNaN(Number(rawHours)) || Number(rawHours) < 0) {
+      this.showToast('El Horómetro Total es obligatorio y debe ser un número válido mayor o igual a 0.', 'error');
+      this.goToStep(1);
+      const hInput = document.getElementById('field-hourmeter');
+      if (hInput) {
+        hInput.focus();
+        hInput.classList.add('input-error');
+        setTimeout(() => hInput.classList.remove('input-error'), 3000);
+      }
+      return;
+    }
+
     if (!this.reportData.techSignature && !this.reportData.clientSignature) {
       this.showToast('Nota: El reporte se emitirá sin firmas registradas.', 'warning');
     }
@@ -1894,19 +1908,21 @@ class IndustracApp {
         : 'REP-2026-0001';
       this.reportData.reportNumber = confirmedNumber;
 
+      // 4. Update data on all views immediately so Horómetros and Historial reflect confirmed persistence
+      await this.loadReports();
+      await this.loadHorometersData();
+      await this.loadEquipments();
+
       this.showToast(`Generando PDF oficial para ${confirmedNumber}...`, 'info');
 
-      // 4. Generate high-fidelity PDF with the verified correlative
+      // 5. Generate high-fidelity PDF with the verified correlative
       const doc = await this.pdfGen.generatePdf(this.reportData);
 
-      // 5. Download file safely across all browsers & upload to Google Drive
+      // 6. Download file safely across all browsers & upload to Google Drive
       const fileName = this.generateReportPdfFileName(this.reportData);
       await this.triggerFileDownload(doc, fileName, this.reportData.id);
 
       this.showToast(`¡Reporte ${confirmedNumber} generado exitosamente!`, 'success');
-      await this.loadReports();
-      await this.loadHorometersData();
-      await this.loadEquipments();
 
       // Clear draft cache once finalized
       localStorage.removeItem('industrac_active_draft');
@@ -2231,16 +2247,53 @@ class IndustracApp {
   }
 
   async deleteReport(reportId) {
-    if (!confirm('¿Está seguro de eliminar este reporte permanentemente?')) return;
+    if (!reportId) return;
+    if (this._isDeletingReport) return;
+
+    const rep = this.reports.find(r => r.id === reportId || r.reportNumber === reportId);
+    const repDisplay = rep ? `${rep.reportNumber || 'Reporte'} (${rep.client || 'Cliente'})` : `Reporte ${reportId}`;
+
+    const confirmed = await this.showConfirmModal({
+      title: 'Eliminar Reporte Técnico',
+      message: `¿Está seguro de eliminar permanentemente el reporte <strong>${repDisplay}</strong>?<br><br><span style="color: var(--color-text-muted); font-size: 0.85rem;">Esta acción eliminará el registro del historial. Los datos del catálogo de equipos y sus horómetros se mantendrán protegidos.</span>`,
+      confirmText: 'Sí, eliminar permanentemente',
+      cancelText: 'Cancelar',
+      isDanger: true,
+      icon: '🗑️'
+    });
+
+    if (!confirmed) return;
+
+    this._isDeletingReport = true;
+    const previousReports = [...this.reports];
 
     try {
-      const res = await fetch(`/api/reports/${reportId}`, { method: 'DELETE' });
-      if (res.ok) {
-        this.showToast('Reporte eliminado.', 'success');
-        this.loadReports();
+      this.showToast(`Eliminando reporte ${rep ? rep.reportNumber : ''}...`, 'info');
+
+      // Optimistic UI update
+      this.reports = this.reports.filter(r => r.id !== reportId && r.reportNumber !== reportId);
+      this.renderHistoryTable(this.reports);
+
+      const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success !== false) {
+        this.showToast(`Reporte ${rep ? rep.reportNumber : reportId} eliminado exitosamente.`, 'success');
+        // Await server reload to guarantee full synchronization
+        await this.loadReports();
+      } else {
+        // Rollback on server error
+        this.reports = previousReports;
+        this.renderHistoryTable(this.reports);
+        throw new Error(data.error || `Error del servidor (${res.status})`);
       }
     } catch (e) {
-      this.showToast('Error al eliminar reporte.', 'error');
+      console.error('Error al eliminar reporte:', e);
+      this.reports = previousReports;
+      this.renderHistoryTable(this.reports);
+      this.showToast('No se pudo eliminar el reporte: ' + e.message, 'error');
+    } finally {
+      this._isDeletingReport = false;
     }
   }
 
@@ -2917,69 +2970,11 @@ class IndustracApp {
     }
   }
 
-  // --- MODAL: MODO DEMO / SIMULACIÓN ---
-  async openDemoManagerModal() {
-    const modal = document.getElementById('demo-manager-modal');
-    if (!modal) return;
-
-    try {
-      const res = await fetch('/api/demo/status');
-      const data = await res.json();
-      const statusEl = document.getElementById('demo-status-summary');
-      if (statusEl) {
-        statusEl.innerHTML = `
-          <div style="background: ${data.isLoaded ? '#EFF6FF' : '#F8FAFC'}; border: 1px solid ${data.isLoaded ? '#BFDBFE' : '#E2E8F0'}; border-radius: 6px; padding: 0.85rem;">
-            <strong>Estado actual:</strong> ${data.isLoaded ? '<span style="color: #1E40AF;">✅ Datos de simulación activos</span>' : '<span style="color: #64748B;">⚪ Sin datos de simulación activos</span>'}
-            <div style="font-size: 0.8rem; color: #475569; margin-top: 0.25rem;">
-              • Clientes de prueba activos: <strong>${data.demoClientsCount}</strong><br>
-              • Compresores de prueba activos: <strong>${data.demoEquipmentsCount}</strong><br>
-              • Total global en plataforma: ${data.totalClientsCount} clientes / ${data.totalEquipmentsCount} equipos
-            </div>
-          </div>
-        `;
-      }
-    } catch (e) {}
-
-    modal.classList.add('active');
-  }
-
-  closeDemoManagerModal() {
-    const modal = document.getElementById('demo-manager-modal');
-    if (modal) modal.classList.remove('active');
-  }
-
-  async loadDemoData() {
-    try {
-      this.showToast('Cargando datos de simulación...', 'info');
-      const res = await fetch('/api/demo/load', { method: 'POST' });
-      const data = await res.json();
-
-      await this.loadClients();
-      await this.loadEquipments();
-      this.closeDemoManagerModal();
-      this.showToast(data.message || 'Datos de simulación cargados exitosamente.', 'success');
-    } catch (e) {
-      this.showToast('Error al cargar datos demo: ' + e.message, 'error');
-    }
-  }
-
-  async clearDemoData() {
-    if (!confirm('¿Desea eliminar únicamente los registros de demostración? Sus clientes, equipos y reportes reales NO serán afectados.')) return;
-
-    try {
-      this.showToast('Eliminando registros de demostración...', 'info');
-      const res = await fetch('/api/demo/clear', { method: 'POST' });
-      const data = await res.json();
-
-      await this.loadClients();
-      await this.loadEquipments();
-      this.selectClient('all');
-      this.closeDemoManagerModal();
-      this.showToast(data.message || 'Datos de simulación eliminados.', 'success');
-    } catch (e) {
-      this.showToast('Error al limpiar datos demo: ' + e.message, 'error');
-    }
-  }
+  // --- MODO DEMOSTRACIÓN RETIRADO EN PRODUCCIÓN ---
+  openDemoManagerModal() {}
+  closeDemoManagerModal() {}
+  async loadDemoData() {}
+  async clearDemoData() {}
 
   // --- ADMINISTRACIÓN DE PLANES DE MANTENIMIENTO ---
   renderPlansView() {
@@ -3283,38 +3278,15 @@ class IndustracApp {
     if (sortSelect) sortSelect.value = 'urgency';
 
     await this.loadHorometersData();
-    this.showToast(mode === 'demo' ? '🧪 Modo Demostración activado (15 equipos simulados).' : '🏢 Modo Datos Reales activado.', 'info');
   }
 
   async resetDemoHorometers() {
-    const confirmed = await this.showConfirmModal({
-      title: 'Reiniciar Datos Demostrativos',
-      message: '¿Desea restablecer todos los equipos y lecturas simuladas a sus valores de fábrica de demostración?<br><br>💡 Sus reportes técnicos reales y catálogo de producción <strong>no se verán afectados</strong>.',
-      confirmText: 'Sí, Reiniciar Demo',
-      isDanger: false,
-      icon: '🧪'
-    });
-
-    if (!confirmed) return;
-
-    try {
-      const res = await fetch('/api/demo/reset-horometers', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error al reiniciar datos demo');
-
-      this.showToast('¡Datos de demostración reiniciados con éxito!', 'success');
-      await this.loadHorometersData();
-      await this.loadEquipments();
-    } catch (err) {
-      console.error('Error reiniciando demo:', err);
-      this.showToast('Error al reiniciar demo: ' + err.message, 'error');
-    }
+    this.showToast('El modo demostración ha sido retirado. El sistema opera con datos reales.', 'info');
   }
 
   async loadHorometersData() {
     try {
-      const mode = this.horometerMode || 'real';
-      const res = await fetch(`/api/horometers?mode=${mode}`);
+      const res = await fetch('/api/horometers');
       if (!res.ok) throw new Error('Error al cargar datos de horómetros');
       const data = await res.json();
 
@@ -3322,16 +3294,6 @@ class IndustracApp {
       this.horometersSummary = data.summary || null;
       this.horometersPriorityList = data.priorityAttention || [];
       this.horometersMonthlyProjection = data.monthlyProjection || null;
-
-      // Update Header Badges
-      const realCountBadge = document.getElementById('mode-count-real');
-      if (realCountBadge) realCountBadge.textContent = data.realEquipmentsCount ?? 0;
-      const demoCountBadge = document.getElementById('mode-count-demo');
-      if (demoCountBadge) demoCountBadge.textContent = data.demoEquipmentsCount ?? 0;
-
-      // Update Demo banner visibility
-      const demoBanner = document.getElementById('horometers-demo-banner');
-      if (demoBanner) demoBanner.style.display = this.horometerMode === 'demo' ? 'flex' : 'none';
 
       this.renderHorometersKPIs();
       this.renderPriorityAttentionCards();

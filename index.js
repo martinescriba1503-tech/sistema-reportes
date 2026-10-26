@@ -184,12 +184,13 @@ app.post('/api/reports', (req, res) => {
     writeJson(REPORTS_FILE, reports);
 
     // Auto-sync to Google Sheets in background if finalized
+    let horometerUpdate = null;
     if (newReport.status === 'Finalizado') {
       syncReportToGoogleSheets(newReport);
-      applyReportToEquipmentHorometer(newReport);
+      horometerUpdate = applyReportToEquipmentHorometer(newReport);
     }
 
-    res.status(201).json(newReport);
+    res.status(201).json({ ...newReport, horometerUpdate });
   } catch (err) {
     console.error('Error saving report:', err);
     res.status(500).json({ error: 'Error interno al guardar el reporte' });
@@ -223,33 +224,57 @@ app.put('/api/reports/:id', (req, res) => {
     writeJson(REPORTS_FILE, reports);
 
     // Auto-sync to Google Sheets in background if finalized
+    let horometerUpdate = null;
     if (updated.status === 'Finalizado') {
       syncReportToGoogleSheets(updated);
-      applyReportToEquipmentHorometer(updated);
+      horometerUpdate = applyReportToEquipmentHorometer(updated);
     }
 
-    res.json(updated);
+    res.json({ ...updated, horometerUpdate });
   } catch (err) {
     console.error('Error updating report:', err);
     res.status(500).json({ error: 'Error al actualizar el reporte' });
   }
 });
 
-app.delete('/api/reports/:id', (req, res) => {
+app.delete('/api/reports/:id', async (req, res) => {
   try {
-    let reports = readJson(REPORTS_FILE, []);
-    const initialLen = reports.length;
-    reports = reports.filter(r => r.id !== req.params.id && r.reportNumber !== req.params.id);
-
-    if (reports.length === initialLen) {
-      return res.status(404).json({ error: 'Reporte no encontrado' });
+    const rawId = req.params.id ? String(req.params.id).trim() : '';
+    if (!rawId) {
+      return res.status(400).json({ error: 'ID o número de reporte inválido o vacío' });
     }
 
+    let reports = readJson(REPORTS_FILE, []);
+    const initialLen = reports.length;
+    const targetIdLower = rawId.toLowerCase();
+
+    const reportToDelete = reports.find(r => 
+      (r.id && String(r.id).trim().toLowerCase() === targetIdLower) ||
+      (r.reportNumber && String(r.reportNumber).trim().toLowerCase() === targetIdLower)
+    );
+
+    if (!reportToDelete) {
+      return res.status(404).json({ error: 'Reporte no encontrado en el sistema.' });
+    }
+
+    reports = reports.filter(r => r !== reportToDelete);
     writeJson(REPORTS_FILE, reports);
-    res.json({ message: 'Reporte eliminado exitosamente' });
+
+    // Call Google Sheets delete webhook if configured (non-blocking)
+    deleteReportFromGoogleSheets(reportToDelete).catch(err => {
+      console.warn('[Google Sheets Sync] Aviso al eliminar:', err.message);
+    });
+
+    console.log(`[Reports] Reporte ${reportToDelete.reportNumber || reportToDelete.id} eliminado permanentemente.`);
+    res.json({
+      success: true,
+      message: 'Reporte eliminado exitosamente',
+      id: reportToDelete.id,
+      reportNumber: reportToDelete.reportNumber
+    });
   } catch (err) {
     console.error('Error deleting report:', err);
-    res.status(500).json({ error: 'Error al eliminar el reporte' });
+    res.status(500).json({ error: 'Error interno al eliminar el reporte' });
   }
 });
 
@@ -407,625 +432,13 @@ app.get('/api/reports/:id/pdf-view', (req, res) => {
 });
 
 // =========================================================================
-// DEMO SIMULATION DATA & CATALOG LOGIC
+// PRODUCTION CATALOG LOGIC (DEMO DATA RETIRED FOR PRODUCTION USE)
 // =========================================================================
-const DEMO_CLIENTS = [
-  {
-    id: 'cli-demo-lavarecina',
-    name: 'Lavarecina',
-    address: 'Av. Industrial 1450, Callao (Demo)',
-    contact: 'Dpto. Mantenimiento',
-    notes: 'Cliente ficticio de demostración para catálogo INDUSTRAC.',
-    isDemo: true
-  },
-  {
-    id: 'cli-demo-cientifica',
-    name: 'Científica del Sur',
-    address: 'Campus Villa El Salvador, Lima (Demo)',
-    contact: 'Dpto. Infraestructura y Laboratorios',
-    notes: 'Cliente ficticio de demostración para catálogo INDUSTRAC.',
-    isDemo: true
-  },
-  {
-    id: 'cli-demo-molitalia',
-    name: 'Molitalia',
-    address: 'Av. Venezuela 2850, Lima (Demo)',
-    contact: 'Mantenimiento Planta Alimentos',
-    notes: 'Cliente ficticio de demostración para catálogo INDUSTRAC.',
-    isDemo: true
-  },
-  {
-    id: 'cli-demo-qroma',
-    name: 'QROMA',
-    address: 'Av. César Vallejo 1851, El Agustino, Lima (Demo)',
-    contact: 'Planta de Pinturas y Resinas',
-    notes: 'Cliente ficticio de demostración para catálogo INDUSTRAC.',
-    isDemo: true
-  },
-  {
-    id: 'cli-demo-fameca',
-    name: 'FAMECA',
-    address: 'Av. Los Frutales 320, Ate, Lima (Demo)',
-    contact: 'Planta Metalmecánica',
-    notes: 'Cliente ficticio de demostración para catálogo INDUSTRAC.',
-    isDemo: true
-  }
-];
+const DEMO_CLIENTS = [];
 
-const DEMO_EQUIPMENTS = [
-  // 1. Lavarecina (3 equipos)
-  {
-    id: 'eq-demo-lav-001',
-    clientId: 'cli-demo-lavarecina',
-    client: 'Lavarecina',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 75',
-    serialNumber: 'DEMO-SN-LAV-001',
-    apiCode: 'DEMO-LAV-001',
-    controller: 'Elektronikon Touch',
-    pressure: '7.5 bar',
-    airflow: '460 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '5850',
-    hours: 5850,
-    location: 'Sala de Compresores Principal',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 250,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-08-10',
-      hourMeter: 4000,
-      plan: 'Plan B — 4000 horas',
-      reportNumber: 'REP-DEMO-001',
-      notes: 'Cambio de filtro de aire, filtro de aceite y separador. Nivel de aceite verificado.'
-    },
-    nextMaintenance: {
-      milestoneHours: 6000,
-      plan: 'Plan A — 2000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-1', date: '2026-10-18', hourMeter: 5850, hours: 5850, type: 'reading', notes: 'Lectura rutinaria quincenal', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-2', date: '2026-09-15', hourMeter: 5200, hours: 5200, type: 'reading', notes: 'Lectura mensual de control', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-3', date: '2026-08-10', hourMeter: 4000, hours: 4000, type: 'maintenance', plan: 'Plan B — 4000 horas', reportNumber: 'REP-DEMO-001', technician: 'GINO GREGORIO SILVA CLEMENTE', notes: 'Mantenimiento preventivo de 4000h' }
-    ],
-    notes: 'Compresor principal de planta. Operando a plena carga.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-lav-002',
-    clientId: 'cli-demo-lavarecina',
-    client: 'Lavarecina',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 37',
-    serialNumber: 'DEMO-SN-LAV-002',
-    apiCode: 'DEMO-LAV-002',
-    controller: 'Elektronikon MkIV',
-    pressure: '8.0 bar',
-    airflow: '230 cfm',
-    oilType: 'Roto Xtend Duty',
-    hourMeter: '4120',
-    hours: 4120,
-    location: 'Sala de Compresores Principal',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 180,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-04-15',
-      hourMeter: 2000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-002',
-      notes: 'Mantenimiento inicial de 2000 horas.'
-    },
-    nextMaintenance: {
-      milestoneHours: 4000,
-      plan: 'Plan B — 4000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-4', date: '2026-10-20', hourMeter: 4120, hours: 4120, type: 'reading', notes: 'Lectura mensual', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-5', date: '2026-04-15', hourMeter: 2000, hours: 2000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-002', technician: 'ABEL ELIAS LUNA YSIDRO', notes: 'Mantenimiento Plan A' }
-    ],
-    notes: 'Superó hito de 4,000h y fecha trimestral excedida. Requiere servicio urgente.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-lav-003',
-    clientId: 'cli-demo-lavarecina',
-    client: 'Lavarecina',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 22',
-    serialNumber: 'DEMO-SN-LAV-003',
-    apiCode: 'DEMO-LAV-003',
-    controller: 'Elektronikon Basic',
-    pressure: '7.5 bar',
-    airflow: '135 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '2150',
-    hours: 2150,
-    location: 'Línea Auxiliar de Envasado',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 120,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-09-20',
-      hourMeter: 2000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-003',
-      notes: 'Servicio preventivo ejecutado recientemente.'
-    },
-    nextMaintenance: {
-      milestoneHours: 4000,
-      plan: 'Plan B — 4000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-6', date: '2026-10-10', hourMeter: 2150, hours: 2150, type: 'reading', notes: 'Control de rutina', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-7', date: '2026-09-20', hourMeter: 2000, hours: 2000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-003', technician: 'CARLOS GIOVANNY OJEDA CAMARGO', notes: 'Plan A 2000h' }
-    ],
-    notes: 'Equipo al día. Próximo mantenimiento en 4,000h.',
-    isDemo: true
-  },
+const DEMO_EQUIPMENTS = [];
 
-  // 2. Científica del Sur (4 equipos - Incluye Ciclo Especial 3,000 / 6,000 / 12,000h)
-  {
-    id: 'eq-demo-cds-001',
-    clientId: 'cli-demo-cientifica',
-    client: 'Científica del Sur',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 75 VSD+',
-    serialNumber: 'DEMO-SN-CDS-001',
-    apiCode: 'DEMO-CDS-001',
-    controller: 'Elektronikon Touch',
-    pressure: '8.5 bar',
-    airflow: '470 cfm',
-    oilType: 'Roto Xtend Duty',
-    hourMeter: '6080',
-    hours: 6080,
-    location: 'Caseta Central de Fuerza',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_3000', // CICLO ESPECIAL 3k/6k/12k
-    cycleType: 'ciclo_3000',
-    monthlyAverageHours: 280,
-    alertThresholdHours: 250,
-    lastMaintenance: {
-      date: '2026-06-05',
-      hourMeter: 3000,
-      plan: 'Plan A — 3000 horas',
-      reportNumber: 'REP-DEMO-004',
-      notes: 'Mantenimiento inicial de ciclo especial 3000h.'
-    },
-    nextMaintenance: {
-      milestoneHours: 6000,
-      plan: 'Plan B — 6000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-8', date: '2026-10-22', hourMeter: 6080, hours: 6080, type: 'reading', notes: 'Lectura reciente', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-9', date: '2026-06-05', hourMeter: 3000, hours: 3000, type: 'maintenance', plan: 'Plan A — 3000 horas', reportNumber: 'REP-DEMO-004', technician: 'GINO GREGORIO SILVA CLEMENTE', notes: 'Plan A 3000h' }
-    ],
-    notes: 'Ciclo especial 3,000h / 6,000h / 12,000h. Vencido por horas y fecha para Plan B.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-cds-002',
-    clientId: 'cli-demo-cientifica',
-    client: 'Científica del Sur',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 37',
-    serialNumber: 'DEMO-SN-CDS-002',
-    apiCode: 'DEMO-CDS-002',
-    controller: 'Elektronikon MkIV',
-    pressure: '7.5 bar',
-    airflow: '235 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '7920',
-    hours: 7920,
-    location: 'Laboratorios de Ingeniería',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 220,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-08-25',
-      hourMeter: 6000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-005',
-      notes: 'Servicio de 6000 horas completado.'
-    },
-    nextMaintenance: {
-      milestoneHours: 8000,
-      plan: 'Plan C — 8000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-10', date: '2026-10-15', hourMeter: 7920, hours: 7920, type: 'reading', notes: 'A solo 80h de Mantenimiento Mayor Plan C', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-11', date: '2026-08-25', hourMeter: 6000, hours: 6000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-005', technician: 'ABEL ELIAS LUNA YSIDRO', notes: 'Plan A 6000h' }
-    ],
-    notes: 'Atención Prioritaria: A 80 horas de Plan C Mayor (8,000h). Preparar kits de válvulas.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-cds-003',
-    clientId: 'cli-demo-cientifica',
-    client: 'Científica del Sur',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 22',
-    serialNumber: 'DEMO-SN-CDS-003',
-    apiCode: 'DEMO-CDS-003',
-    controller: 'Elektronikon Basic',
-    pressure: '7.5 bar',
-    airflow: '130 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '3200',
-    hours: 3200,
-    location: 'Taller Mecánico Experimental',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 150,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-06-10',
-      hourMeter: 2000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-006',
-      notes: 'Mantenimiento inicial.'
-    },
-    nextMaintenance: {
-      milestoneHours: 4000,
-      plan: 'Plan B — 4000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-12', date: '2026-10-12', hourMeter: 3200, hours: 3200, type: 'reading', notes: 'Lectura mensual', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-13', date: '2026-06-10', hourMeter: 2000, hours: 2000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-006', technician: 'CARLOS GIOVANNY OJEDA CAMARGO', notes: 'Plan A 2000h' }
-    ],
-    notes: 'Vencido por fecha trimestral (hace 45 días), aunque quedan 800h para el hito.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-cds-004',
-    clientId: 'cli-demo-cientifica',
-    client: 'Científica del Sur',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 30',
-    serialNumber: 'DEMO-SN-CDS-004',
-    apiCode: 'DEMO-CDS-004',
-    controller: 'Elektronikon Touch',
-    pressure: '7.5 bar',
-    airflow: '185 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '1450',
-    hours: 1450,
-    location: 'Pabellón de Simulación Médica',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    lastMaintenance: null,
-    nextMaintenance: null,
-    readingsHistory: [
-      { id: 'rh-14', date: '2026-10-05', hourMeter: 1450, hours: 1450, type: 'reading', notes: 'Toma inicial de datos', registeredBy: 'Téc. Demostración' }
-    ],
-    notes: 'Equipo sin línea base configurada (Pendiente de Configuración).',
-    isDemo: true
-  },
-
-  // 3. Molitalia (3 equipos)
-  {
-    id: 'eq-demo-mol-001',
-    clientId: 'cli-demo-molitalia',
-    client: 'Molitalia',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 45 VSD+',
-    serialNumber: 'DEMO-SN-MOL-001',
-    apiCode: 'DEMO-MOL-001',
-    controller: 'Elektronikon Touch',
-    pressure: '8.0 bar',
-    airflow: '290 cfm',
-    oilType: 'Roto Xtend Duty',
-    hourMeter: '8050',
-    hours: 8050,
-    location: 'Planta de Galletería',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 350,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-08-30',
-      hourMeter: 6000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-007',
-      notes: 'Mantenimiento de 6000h.'
-    },
-    nextMaintenance: {
-      milestoneHours: 8000,
-      plan: 'Plan C — 8000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-15', date: '2026-10-24', hourMeter: 8050, hours: 8050, type: 'reading', notes: 'Superó hito de 8000h', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-16', date: '2026-08-30', hourMeter: 6000, hours: 6000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-007', technician: 'GINO GREGORIO SILVA CLEMENTE', notes: 'Plan A 6000h' }
-    ],
-    notes: 'Vencido por horas: alcanzó 8,050h (+50h de exceso). Requiere Plan C Mayor urgente.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-mol-002',
-    clientId: 'cli-demo-molitalia',
-    client: 'Molitalia',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 55',
-    serialNumber: 'DEMO-SN-MOL-002',
-    apiCode: 'DEMO-MOL-002',
-    controller: 'Elektronikon MkIV',
-    pressure: '7.5 bar',
-    airflow: '345 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '10400',
-    hours: 10400,
-    location: 'Planta de Harinas y Fideos',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 250,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-09-28',
-      hourMeter: 10000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-008',
-      notes: 'Servicio de 10000h completado según pauta.'
-    },
-    nextMaintenance: {
-      milestoneHours: 12000,
-      plan: 'Plan B — 4000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-17', date: '2026-10-20', hourMeter: 10400, hours: 10400, type: 'reading', notes: 'Lectura mensual', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-18', date: '2026-09-28', hourMeter: 10000, hours: 10000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-008', technician: 'ABEL ELIAS LUNA YSIDRO', notes: 'Plan A 10000h' }
-    ],
-    notes: 'Segundo ciclo de 8,000h. Operando al día hacia hito de 12,000h (Plan B).',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-mol-003',
-    clientId: 'cli-demo-molitalia',
-    client: 'Molitalia',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 75',
-    serialNumber: 'DEMO-SN-MOL-003',
-    apiCode: 'DEMO-MOL-003',
-    controller: 'Elektronikon Touch',
-    pressure: '8.0 bar',
-    airflow: '460 cfm',
-    oilType: 'Roto Xtend Duty',
-    hourMeter: '3960',
-    hours: 3960,
-    location: 'Sala Central de Compresores',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 300,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-08-01',
-      hourMeter: 2000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-009',
-      notes: 'Mantenimiento inicial.'
-    },
-    nextMaintenance: {
-      milestoneHours: 4000,
-      plan: 'Plan B — 4000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-19', date: '2026-10-24', hourMeter: 3960, hours: 3960, type: 'reading', notes: 'A 40h del hito y a 7 días de fecha trimestral', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-20', date: '2026-08-01', hourMeter: 2000, hours: 2000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-009', technician: 'CARLOS GIOVANNY OJEDA CAMARGO', notes: 'Plan A 2000h' }
-    ],
-    notes: 'Próximo por horas y fecha. Restan solo 40h para Plan B.',
-    isDemo: true
-  },
-
-  // 4. QROMA (3 equipos - Incluye Ciclo Especial 3,000 / 6,000 / 12,000h)
-  {
-    id: 'eq-demo-qro-001',
-    clientId: 'cli-demo-qroma',
-    client: 'QROMA',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 37',
-    serialNumber: 'DEMO-SN-QRO-001',
-    apiCode: 'DEMO-QRO-001',
-    controller: 'Elektronikon Touch',
-    pressure: '7.5 bar',
-    airflow: '230 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '6300',
-    hours: 6300,
-    location: 'Área de Pinturas Líquidas',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 210,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-07-02',
-      hourMeter: 4000,
-      plan: 'Plan B — 4000 horas',
-      reportNumber: 'REP-DEMO-010',
-      notes: 'Mantenimiento Plan B.'
-    },
-    nextMaintenance: {
-      milestoneHours: 6000,
-      plan: 'Plan A — 2000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-21', date: '2026-10-23', hourMeter: 6300, hours: 6300, type: 'reading', notes: 'Superó 6,000h por 300h', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-22', date: '2026-07-02', hourMeter: 4000, hours: 4000, type: 'maintenance', plan: 'Plan B — 4000 horas', reportNumber: 'REP-DEMO-010', technician: 'GINO GREGORIO SILVA CLEMENTE', notes: 'Plan B 4000h' }
-    ],
-    notes: 'Vencido por ambos criterios: +300h y fecha trimestral superada.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-qro-002',
-    clientId: 'cli-demo-qroma',
-    client: 'QROMA',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 55 VSD',
-    serialNumber: 'DEMO-SN-QRO-002',
-    apiCode: 'DEMO-QRO-002',
-    controller: 'Elektronikon Touch',
-    pressure: '8.5 bar',
-    airflow: '350 cfm',
-    oilType: 'Roto Xtend Duty',
-    hourMeter: '11820',
-    hours: 11820,
-    location: 'Área de Resinas Industriales',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_3000', // CICLO ESPECIAL 3k/6k/12k
-    cycleType: 'ciclo_3000',
-    monthlyAverageHours: 290,
-    alertThresholdHours: 250,
-    lastMaintenance: {
-      date: '2026-08-15',
-      hourMeter: 9000,
-      plan: 'Plan A — 3000 horas',
-      reportNumber: 'REP-DEMO-011',
-      notes: 'Servicio de 9000h ciclo 3k.'
-    },
-    nextMaintenance: {
-      milestoneHours: 12000,
-      plan: 'Plan C — 12000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-23', date: '2026-10-21', hourMeter: 11820, hours: 11820, type: 'reading', notes: 'A solo 180h del Mantenimiento Mayor de 12,000h', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-24', date: '2026-08-15', hourMeter: 9000, hours: 9000, type: 'maintenance', plan: 'Plan A — 3000 horas', reportNumber: 'REP-DEMO-011', technician: 'ABEL ELIAS LUNA YSIDRO', notes: 'Plan A 9000h ciclo especial' }
-    ],
-    notes: 'Ciclo especial 12,000h. Próximo a Mantenimiento Mayor Plan C (restan 180h).',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-qro-003',
-    clientId: 'cli-demo-qroma',
-    client: 'QROMA',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 90',
-    serialNumber: 'DEMO-SN-QRO-003',
-    apiCode: 'DEMO-QRO-003',
-    controller: 'Elektronikon MkIV',
-    pressure: '7.5 bar',
-    airflow: '560 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '5100',
-    hours: 5100,
-    location: 'Casa de Fuerza General',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 230,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-10-10',
-      hourMeter: 4000,
-      plan: 'Plan B — 4000 horas',
-      reportNumber: 'REP-DEMO-012',
-      notes: 'Mantenimiento Plan B ejecutado recientemente.'
-    },
-    nextMaintenance: {
-      milestoneHours: 6000,
-      plan: 'Plan A — 2000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-25', date: '2026-10-22', hourMeter: 5100, hours: 5100, type: 'reading', notes: 'Lectura rutinaria', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-26', date: '2026-10-10', hourMeter: 4000, hours: 4000, type: 'maintenance', plan: 'Plan B — 4000 horas', reportNumber: 'REP-DEMO-012', technician: 'CARLOS GIOVANNY OJEDA CAMARGO', notes: 'Plan B 4000h' }
-    ],
-    notes: 'Equipo al día. Próximo hito 6,000h (Plan A).',
-    isDemo: true
-  },
-
-  // 5. FAMECA (2 equipos)
-  {
-    id: 'eq-demo-fam-001',
-    clientId: 'cli-demo-fameca',
-    client: 'FAMECA',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 45',
-    serialNumber: 'DEMO-SN-FAM-001',
-    apiCode: 'DEMO-FAM-001',
-    controller: 'Elektronikon Basic',
-    pressure: '7.5 bar',
-    airflow: '280 cfm',
-    oilType: 'Roto Inject Fluid',
-    hourMeter: '4000',
-    hours: 4000,
-    location: 'Nave de Mecanizado CNC',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    monthlyAverageHours: 200,
-    alertThresholdHours: 200,
-    lastMaintenance: {
-      date: '2026-08-20',
-      hourMeter: 2000,
-      plan: 'Plan A — 2000 horas',
-      reportNumber: 'REP-DEMO-013',
-      notes: 'Mantenimiento inicial Plan A.'
-    },
-    nextMaintenance: {
-      milestoneHours: 4000,
-      plan: 'Plan B — 4000 horas'
-    },
-    readingsHistory: [
-      { id: 'rh-27', date: '2026-10-25', hourMeter: 4000, hours: 4000, type: 'reading', notes: 'Horómetro alcanzó exactamente 4,000h', registeredBy: 'Téc. Demostración' },
-      { id: 'rh-28', date: '2026-08-20', hourMeter: 2000, hours: 2000, type: 'maintenance', plan: 'Plan A — 2000 horas', reportNumber: 'REP-DEMO-013', technician: 'GINO GREGORIO SILVA CLEMENTE', notes: 'Plan A 2000h' }
-    ],
-    notes: 'Vencido por horas exactas (0h restantes). Requiere Plan B.',
-    isDemo: true
-  },
-  {
-    id: 'eq-demo-fam-002',
-    clientId: 'cli-demo-fameca',
-    client: 'FAMECA',
-    manufacturer: 'Atlas Copco',
-    model: 'GA 75 VSD+',
-    serialNumber: 'DEMO-SN-FAM-002',
-    apiCode: 'DEMO-FAM-002',
-    controller: 'Elektronikon Touch',
-    pressure: '8.0 bar',
-    airflow: '465 cfm',
-    oilType: 'Roto Xtend Duty',
-    hourMeter: '5500',
-    hours: 5500,
-    location: 'Línea de Ensamble y Granallado',
-    status: 'Activo',
-    active: true,
-    maintenanceCycle: 'ciclo_2000',
-    cycleType: 'ciclo_2000',
-    lastMaintenance: null,
-    nextMaintenance: null,
-    readingsHistory: [
-      { id: 'rh-29', date: '2026-10-18', hourMeter: 5500, hours: 5500, type: 'reading', notes: 'Inspección visual en planta', registeredBy: 'Téc. Demostración' }
-    ],
-    notes: 'Equipo sin línea base configurada (Pendiente de Configuración).',
-    isDemo: true
-  }
-];
-
+// Helper to initialize catalog data
 // Helper to initialize catalog data, sync existing clients & demo data
 function initCatalogData() {
   let clients = readJson(CLIENTS_FILE, []);
@@ -1069,28 +482,6 @@ function initCatalogData() {
       }
       if (!eq.clientId || eq.clientId !== clientObj.id) {
         eq.clientId = clientObj.id;
-        equipmentsModified = true;
-      }
-    }
-  });
-
-  // 2. Load demo data idempotently if not present
-  DEMO_CLIENTS.forEach(demoClient => {
-    const exists = clients.some(c => c.id === demoClient.id || c.name.toLowerCase() === demoClient.name.toLowerCase());
-    if (!exists) {
-      clients.push({ ...demoClient });
-      clientsModified = true;
-    }
-  });
-
-  DEMO_EQUIPMENTS.forEach(demoEq => {
-    const idx = equipments.findIndex(e => e.id === demoEq.id || e.apiCode === demoEq.apiCode);
-    if (idx === -1) {
-      equipments.push({ ...demoEq });
-      equipmentsModified = true;
-    } else if (equipments[idx].isDemo) {
-      if (!equipments[idx].lastMaintenance || equipments[idx].hourMeter === '0' || !equipments[idx].maintenanceCycle || equipments[idx].notes?.includes('ficticio')) {
-        equipments[idx] = { ...demoEq };
         equipmentsModified = true;
       }
     }
@@ -1834,47 +1225,85 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   };
 }
 
-function applyReportToEquipmentHorometer(report) {
-  if (!report || report.status !== 'Finalizado') return;
+function normalizeStr(str) {
+  if (!str) return '';
+  return String(str)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
 
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const repSerial = (report.serialNumber || '').trim().toLowerCase();
-  const repApi = (report.apiCode || '').trim().toLowerCase();
-  const repClient = (report.client || '').trim().toLowerCase();
+function matchReportToEquipment(report, equipments) {
+  if (!report || !Array.isArray(equipments)) return -1;
+  const repSerialNorm = normalizeStr(report.serialNumber);
+  const repApiNorm = normalizeStr(report.apiCode);
+  const repClientNorm = normalizeStr(report.client);
+  const repModelNorm = normalizeStr(report.model);
 
-  const eqIdx = equipments.findIndex(e => {
+  return equipments.findIndex(e => {
+    // 1. Direct equipment ID match
     if (report.equipmentId && e.id === report.equipmentId) return true;
-    const eSerial = (e.serialNumber || '').trim().toLowerCase();
-    const eApi = (e.apiCode || '').trim().toLowerCase();
-    const eClient = (e.client || '').trim().toLowerCase();
-    if (repSerial && eSerial && repSerial === eSerial) {
-      if (!repClient || !eClient || repClient === eClient) return true;
+
+    // 2. Normalized API Code match
+    const eApiNorm = normalizeStr(e.apiCode);
+    if (repApiNorm && eApiNorm && repApiNorm === eApiNorm) return true;
+
+    // 3. Normalized Serial Number match
+    const eSerialNorm = normalizeStr(e.serialNumber);
+    if (repSerialNorm && eSerialNorm) {
+      if (repSerialNorm === eSerialNorm) return true;
+      if (repSerialNorm.length >= 4 && eSerialNorm.length >= 4) {
+        if (repSerialNorm.includes(eSerialNorm) || eSerialNorm.includes(repSerialNorm)) return true;
+      }
     }
-    if (repApi && eApi && repApi === eApi) {
-      if (!repClient || !eClient || repClient === eClient) return true;
+
+    // 4. Model + Client matching (handles small differences like 'EMUSAS S.A.C.' vs 'EMUSA S.A.C')
+    const eClientNorm = normalizeStr(e.client);
+    const eModelNorm = normalizeStr(e.model);
+    if (repModelNorm && eModelNorm && (repModelNorm === eModelNorm || repModelNorm.includes(eModelNorm) || eModelNorm.includes(repModelNorm))) {
+      if (repClientNorm && eClientNorm && (repClientNorm.includes(eClientNorm) || eClientNorm.includes(repClientNorm))) {
+        return true;
+      }
     }
+
     return false;
   });
+}
 
-  if (eqIdx === -1) return;
+function applyReportToEquipmentHorometer(report) {
+  if (!report || report.status !== 'Finalizado') {
+    return { success: false, reason: 'El reporte no tiene estado Finalizado.' };
+  }
+
+  const equipments = readJson(EQUIPMENTS_FILE, []);
+  const eqIdx = matchReportToEquipment(report, equipments);
+
+  if (eqIdx === -1) {
+    console.warn(`[Horometers] No se encontró equipo asociado para el reporte ${report.reportNumber} (${report.client} - ${report.model}).`);
+    return { success: false, reason: 'No se encontró equipo en catálogo que coincida con el reporte.' };
+  }
 
   const eq = equipments[eqIdx];
   const repHourMeter = Number(report.hourMeter);
-  const validHour = !isNaN(repHourMeter) && repHourMeter > 0;
+  const validHour = !isNaN(repHourMeter) && repHourMeter >= 0;
+  const currentEqHours = Number(eq.hourMeter) || Number(eq.hours) || 0;
   const repDate = report.date || new Date().toISOString().split('T')[0];
+  const repNumber = report.reportNumber || '';
 
   if (!Array.isArray(eq.readingsHistory)) {
     eq.readingsHistory = [];
   }
 
-  const repNumber = report.reportNumber || '';
+  const latestExistingDate = eq.lastReadingDate || (eq.lastMaintenance && eq.lastMaintenance.date) || '';
+  const isOlderDate = latestExistingDate && repDate < latestExistingDate;
+
   const existingIdx = repNumber ? eq.readingsHistory.findIndex(h => h.reportNumber === repNumber) : -1;
 
   const histEntry = {
     id: existingIdx !== -1 ? eq.readingsHistory[existingIdx].id : `maint-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
     date: repDate,
-    hourMeter: validHour ? repHourMeter : (Number(eq.hourMeter) || 0),
-    hours: validHour ? repHourMeter : (Number(eq.hourMeter) || 0),
+    hourMeter: validHour ? repHourMeter : currentEqHours,
+    hours: validHour ? repHourMeter : currentEqHours,
     type: 'mantenimiento',
     plan: report.maintenanceType || 'Plan A — 2000 horas',
     reportNumber: repNumber,
@@ -1889,11 +1318,17 @@ function applyReportToEquipmentHorometer(report) {
     eq.readingsHistory.unshift(histEntry);
   }
 
-  // Actualizar horómetro actual si la lectura del reporte es mayor o igual a la existente
-  if (validHour && repHourMeter >= (Number(eq.hourMeter) || 0)) {
-    eq.hourMeter = String(repHourMeter);
-    eq.hours = repHourMeter;
-    eq.lastReadingDate = repDate;
+  // Regla de negocio: Actualizar horómetro actual si la lectura es válida y no es una fecha más antigua
+  let horometerUpdated = false;
+  if (validHour && !isOlderDate) {
+    if (repHourMeter >= currentEqHours) {
+      eq.hourMeter = String(repHourMeter);
+      eq.hours = repHourMeter;
+      eq.lastReadingDate = repDate;
+      horometerUpdated = true;
+    } else {
+      console.warn(`[Horometers] Lectura ${repHourMeter} h es menor a horómetro actual ${currentEqHours} h. Contador conservado.`);
+    }
   }
 
   // Buscar el mantenimiento cronológicamente más reciente para no sobrescribir con fechas antiguas
@@ -1920,53 +1355,84 @@ function applyReportToEquipmentHorometer(report) {
   eq.updatedAt = new Date().toISOString();
 
   writeJson(EQUIPMENTS_FILE, equipments);
+
+  return {
+    success: true,
+    equipmentId: eq.id,
+    equipmentName: `${eq.client} — ${eq.model} [${eq.apiCode || eq.serialNumber}]`,
+    horometerUpdated,
+    newHorometer: eq.hourMeter,
+    previousHorometer: currentEqHours,
+    lastMaintenance: eq.lastMaintenance,
+    nextMaintenance: eq.nextMaintenance
+  };
 }
 
-// Automatically bootstrap equipment maintenance from existing reports if unlinked
+// Automatically bootstrap equipment maintenance from existing reports if unlinked or outdated
 function bootstrapHorometersFromReports() {
   const equipments = readJson(EQUIPMENTS_FILE, []);
   const reports = readJson(REPORTS_FILE, []);
   let modified = false;
 
-  equipments.forEach(eq => {
-    if (!eq.lastMaintenance && !eq.nextMaintenance) {
-      // Find matching finalized report
-      const matched = reports
-        .filter(r => r.status === 'Finalizado' && (
-          (r.equipmentId && r.equipmentId === eq.id) ||
-          (r.apiCode && eq.apiCode && r.apiCode.toLowerCase() === eq.apiCode.toLowerCase())
-        ))
-        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+  const finalizedReports = reports
+    .filter(r => r.status === 'Finalizado')
+    .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
 
-      if (matched) {
-        const maintHours = Number(matched.hourMeter) || Number(eq.hourMeter) || 0;
-        eq.lastMaintenance = {
-          date: matched.date || new Date().toISOString().split('T')[0],
-          hourMeter: maintHours,
-          plan: matched.maintenanceType || 'Plan A — 2000 horas',
-          reportNumber: matched.reportNumber || '',
-          notes: 'Vinculado automáticamente desde historial de reportes.'
-        };
-        const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-        eq.nextMaintenance = {
-          milestoneHours: seq.nextMilestoneHours,
-          plan: seq.nextPlan
-        };
-        if (!Array.isArray(eq.readingsHistory)) {
-          eq.readingsHistory = [];
-        }
-        eq.readingsHistory.push({
-          id: `hist-boot-${matched.id || Date.now()}`,
-          date: matched.date || new Date().toISOString().split('T')[0],
-          hourMeter: maintHours,
-          type: 'mantenimiento',
-          plan: matched.maintenanceType || 'Plan A — 2000 horas',
-          reportNumber: matched.reportNumber || '',
-          notes: `Historial inicial registrado: ${matched.maintenanceType || ''}`,
-          user: matched.technician || 'Técnico INDUSTRAC'
-        });
-        modified = true;
+  finalizedReports.forEach(rep => {
+    const eqIdx = matchReportToEquipment(rep, equipments);
+    if (eqIdx !== -1) {
+      const eq = equipments[eqIdx];
+      const repHour = Number(rep.hourMeter);
+      const validH = !isNaN(repHour) && repHour >= 0;
+      const repDate = rep.date || new Date().toISOString().split('T')[0];
+      const repNum = rep.reportNumber || '';
+
+      if (!Array.isArray(eq.readingsHistory)) eq.readingsHistory = [];
+
+      const existsIdx = repNum ? eq.readingsHistory.findIndex(h => h.reportNumber === repNum) : -1;
+      const entry = {
+        id: existsIdx !== -1 ? eq.readingsHistory[existsIdx].id : `hist-boot-${rep.id || Date.now()}`,
+        date: repDate,
+        hourMeter: validH ? repHour : (Number(eq.hourMeter) || 0),
+        hours: validH ? repHour : (Number(eq.hourMeter) || 0),
+        type: 'mantenimiento',
+        plan: rep.maintenanceType || 'Plan A — 2000 horas',
+        reportNumber: repNum,
+        notes: `Historial verificado: ${rep.maintenanceType || ''}`,
+        user: rep.technician || 'Técnico INDUSTRAC'
+      };
+
+      if (existsIdx !== -1) {
+        eq.readingsHistory[existsIdx] = entry;
+      } else {
+        eq.readingsHistory.push(entry);
       }
+
+      if (validH && repHour >= (Number(eq.hourMeter) || 0)) {
+        eq.hourMeter = String(repHour);
+        eq.hours = repHour;
+        eq.lastReadingDate = repDate;
+      }
+
+      const allMaints = eq.readingsHistory
+        .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
+
+      const latestM = allMaints[0] || entry;
+      eq.lastMaintenance = {
+        date: latestM.date,
+        hourMeter: Number(latestM.hourMeter || latestM.hours || 0),
+        plan: latestM.plan || rep.maintenanceType || 'Plan A — 2000 horas',
+        reportNumber: latestM.reportNumber || repNum,
+        notes: latestM.notes || 'Vinculado automáticamente desde historial de reportes.'
+      };
+
+      const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
+      eq.nextMaintenance = {
+        milestoneHours: seq.nextMilestoneHours,
+        plan: seq.nextPlan
+      };
+      modified = true;
     }
   });
 
@@ -2168,17 +1634,12 @@ function computeMonthlyMaintenanceProjection(enrichedList, todayStr = null) {
 app.get('/api/horometers', (req, res) => {
   const allEquipments = readJson(EQUIPMENTS_FILE, []);
   const today = req.query.date || new Date().toISOString().split('T')[0];
-  const mode = req.query.mode || 'real'; // 'real', 'demo', or 'all'
+  const mode = 'real';
 
-  const realEquipmentsCount = allEquipments.filter(e => !e.isDemo).length;
-  const demoEquipmentsCount = allEquipments.filter(e => !!e.isDemo).length;
-
-  let filteredEquipments = allEquipments;
-  if (mode === 'demo') {
-    filteredEquipments = allEquipments.filter(e => !!e.isDemo);
-  } else if (mode === 'real') {
-    filteredEquipments = allEquipments.filter(e => !e.isDemo);
-  }
+  // Strictly real operational equipments for INDUSTRAC production
+  const filteredEquipments = allEquipments.filter(e => !e.isDemo);
+  const realEquipmentsCount = filteredEquipments.length;
+  const demoEquipmentsCount = 0;
 
   let totalEquipments = filteredEquipments.length;
   let upToDate = 0;
@@ -2612,6 +2073,34 @@ async function syncReportToGoogleSheets(report) {
     return data;
   } catch (err) {
     console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar reporte:', err.message);
+    return null;
+  }
+}
+
+async function deleteReportFromGoogleSheets(report) {
+  try {
+    if (!report) return null;
+    if (report.isDemo || (report.client && report.client.toLowerCase().includes('demo'))) {
+      return null;
+    }
+
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: '', autoSyncSheets: true });
+    if (!settings.googleSheetsWebhookUrl || !settings.googleSheetsWebhookUrl.trim()) return null;
+    if (settings.autoSyncSheets === false) return null;
+
+    const res = await fetch(settings.googleSheetsWebhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_report',
+        reportId: report.id,
+        reportNumber: report.reportNumber
+      })
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar eliminación en Google Sheets:', err.message);
     return null;
   }
 }
