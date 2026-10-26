@@ -113,7 +113,7 @@ async function runTests() {
     assert(!diskExists, `Comprobación física en disco: el reporte no reaparece en data/reports.json.`);
 
     // 7. Verificar que los reportes legítimos anteriores se mantienen intactos
-    assert(diskReports.length === 8, `Los 8 reportes históricos legítimos permanecen 100% intactos.`);
+    assert(diskReports.length === listBefore.length - 1, `Los reportes históricos legítimos permanecen 100% intactos.`);
 
     // 8. Verificar que un segundo intento de eliminar el mismo ID devuelve 404 (evita duplicidad)
     const resDeleteAgain = await fetch(`${baseUrl}/api/reports/${createdRep.id}`, { method: 'DELETE' });

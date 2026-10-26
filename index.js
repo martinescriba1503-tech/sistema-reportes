@@ -202,25 +202,41 @@ app.put('/api/reports/:id', (req, res) => {
     const reports = readJson(REPORTS_FILE, []);
     const index = reports.findIndex(r => r.id === req.params.id || r.reportNumber === req.params.id);
 
+    let updated;
     if (index === -1) {
-      return res.status(404).json({ error: 'Reporte no encontrado para actualizar' });
+      // UPSERT: Si el reporte no se encontró en reports.json (ej. por borrado previo o desincronización de borrador),
+      // lo creamos como nuevo reporte para garantizar que NUNCA se pierda el trabajo del usuario.
+      const reportData = req.body;
+      let validReportNumber = reportData.reportNumber || req.params.id;
+      if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
+        validReportNumber = getNextReportNumber(false);
+      }
+      updated = {
+        ...reportData,
+        id: req.params.id || `rep-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        reportNumber: validReportNumber,
+        status: reportData.status || 'Borrador',
+        createdAt: reportData.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      reports.unshift(updated);
+    } else {
+      const current = reports[index];
+      let validReportNumber = current.reportNumber;
+      if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
+        validReportNumber = getNextReportNumber(false);
+      }
+
+      updated = {
+        ...current,
+        ...req.body,
+        id: current.id, // Immutable ID
+        reportNumber: validReportNumber, // Immutable once assigned
+        updatedAt: new Date().toISOString()
+      };
+      reports[index] = updated;
     }
 
-    const current = reports[index];
-    let validReportNumber = current.reportNumber;
-    if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
-      validReportNumber = getNextReportNumber(false);
-    }
-
-    const updated = {
-      ...current,
-      ...req.body,
-      id: current.id, // Immutable ID
-      reportNumber: validReportNumber, // Immutable once assigned
-      updatedAt: new Date().toISOString()
-    };
-
-    reports[index] = updated;
     writeJson(REPORTS_FILE, reports);
 
     // Auto-sync to Google Sheets in background if finalized
@@ -245,7 +261,6 @@ app.delete('/api/reports/:id', async (req, res) => {
     }
 
     let reports = readJson(REPORTS_FILE, []);
-    const initialLen = reports.length;
     const targetIdLower = rawId.toLowerCase();
 
     const reportToDelete = reports.find(r => 
@@ -264,6 +279,13 @@ app.delete('/api/reports/:id', async (req, res) => {
     deleteReportFromGoogleSheets(reportToDelete).catch(err => {
       console.warn('[Google Sheets Sync] Aviso al eliminar:', err.message);
     });
+
+    // Desvincular de los horómetros del equipo y recalcular
+    try {
+      removeReportFromEquipmentHorometer(reportToDelete);
+    } catch (eHoro) {
+      console.warn('[Horometers] Aviso al desvincular reporte de equipo:', eHoro.message);
+    }
 
     console.log(`[Reports] Reporte ${reportToDelete.reportNumber || reportToDelete.id} eliminado permanentemente.`);
     res.json({
@@ -809,6 +831,32 @@ app.delete('/api/equipments/:id', (req, res) => {
   res.json({ message: 'Equipo eliminado exitosamente.' });
 });
 
+// Endpoint para borrar/restablecer datos de horómetro de un equipo (dejándolo en "Pendiente de datos")
+app.delete('/api/equipments/:id/horometer', (req, res) => {
+  try {
+    const equipments = readJson(EQUIPMENTS_FILE, []);
+    const eq = equipments.find(e => e.id === req.params.id);
+
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado en el sistema.' });
+    }
+
+    eq.readingsHistory = [];
+    eq.lastMaintenance = null;
+    eq.nextMaintenance = null;
+    eq.lastReadingDate = null;
+    eq.hourMeter = null;
+    eq.hours = null;
+    eq.updatedAt = new Date().toISOString();
+
+    writeJson(EQUIPMENTS_FILE, equipments);
+    console.log(`[Horometers] Horómetro del equipo ${eq.model} (${eq.id}) restablecido a estado pendiente de datos.`);
+    res.json({ success: true, message: 'Horómetro restablecido exitosamente a Pendiente de Datos.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al restablecer horómetro: ' + err.message });
+  }
+});
+
 // =========================================================================
 // MÓDULO DE HORÓMETROS Y PRÓXIMOS MANTENIMIENTOS (INDUSTRAC S.A.C.)
 // =========================================================================
@@ -1321,14 +1369,10 @@ function applyReportToEquipmentHorometer(report) {
   // Regla de negocio: Actualizar horómetro actual si la lectura es válida y no es una fecha más antigua
   let horometerUpdated = false;
   if (validHour && !isOlderDate) {
-    if (repHourMeter >= currentEqHours) {
-      eq.hourMeter = String(repHourMeter);
-      eq.hours = repHourMeter;
-      eq.lastReadingDate = repDate;
-      horometerUpdated = true;
-    } else {
-      console.warn(`[Horometers] Lectura ${repHourMeter} h es menor a horómetro actual ${currentEqHours} h. Contador conservado.`);
-    }
+    eq.hourMeter = String(repHourMeter);
+    eq.hours = repHourMeter;
+    eq.lastReadingDate = repDate;
+    horometerUpdated = true;
   }
 
   // Buscar el mantenimiento cronológicamente más reciente para no sobrescribir con fechas antiguas
@@ -1354,8 +1398,6 @@ function applyReportToEquipmentHorometer(report) {
     }
   }
 
-
-
   // Recalcular secuencia y próximo hito a partir del historial acumulado
   const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
   eq.nextMaintenance = {
@@ -1376,6 +1418,68 @@ function applyReportToEquipmentHorometer(report) {
     lastMaintenance: eq.lastMaintenance,
     nextMaintenance: eq.nextMaintenance
   };
+}
+
+// Desvincula un reporte eliminado de la bitácora del equipo y recalcula su horómetro
+function removeReportFromEquipmentHorometer(report) {
+  if (!report) return;
+  const equipments = readJson(EQUIPMENTS_FILE, []);
+  const repNum = report.reportNumber || '';
+  const repId = report.id || '';
+  let modified = false;
+
+  equipments.forEach(eq => {
+    if (!Array.isArray(eq.readingsHistory)) return;
+
+    const hadReport = eq.readingsHistory.some(r => 
+      (repNum && r.reportNumber === repNum) || 
+      (repId && (r.id === repId || r.reportId === repId || r.id === `hist-boot-${repId}`))
+    );
+
+    if (hadReport) {
+      eq.readingsHistory = eq.readingsHistory.filter(r => 
+        !(repNum && r.reportNumber === repNum) &&
+        !(repId && (r.id === repId || r.reportId === repId || r.id === `hist-boot-${repId}`))
+      );
+      modified = true;
+
+      // Recalcular mantenimientos restantes
+      const allMaints = eq.readingsHistory
+        .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
+
+      if (allMaints.length > 0) {
+        const latestM = allMaints[0];
+        eq.lastMaintenance = {
+          date: latestM.date,
+          hourMeter: Number(latestM.hourMeter || latestM.hours || 0),
+          plan: latestM.plan || 'Plan A — 2000 horas',
+          reportNumber: latestM.reportNumber || '',
+          notes: latestM.notes || 'Actualizado tras eliminar reporte.'
+        };
+        const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        eq.lastReadingDate = allReadings[0]?.date || latestM.date;
+        eq.hourMeter = String(latestM.hourMeter || latestM.hours || 0);
+        eq.hours = Number(eq.hourMeter);
+        const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
+        eq.nextMaintenance = {
+          milestoneHours: seq.nextMilestoneHours,
+          plan: seq.nextPlan
+        };
+      } else {
+        eq.lastMaintenance = null;
+        eq.nextMaintenance = null;
+        eq.lastReadingDate = null;
+        eq.hourMeter = '0';
+        eq.hours = 0;
+      }
+      eq.updatedAt = new Date().toISOString();
+    }
+  });
+
+  if (modified) {
+    writeJson(EQUIPMENTS_FILE, equipments);
+  }
 }
 
 // Automatically bootstrap equipment maintenance from existing reports if unlinked or outdated
@@ -1418,7 +1522,7 @@ function bootstrapHorometersFromReports() {
         eq.readingsHistory.push(entry);
       }
 
-      if (validH && repHour >= (Number(eq.hourMeter) || 0)) {
+      if (validH && (!eq.lastReadingDate || repDate >= eq.lastReadingDate || repHour >= (Number(eq.hourMeter) || 0))) {
         eq.hourMeter = String(repHour);
         eq.hours = repHour;
         eq.lastReadingDate = repDate;

@@ -12,7 +12,7 @@
     "pressure": "129 PSI",
     "airflow": "18.6 CFM",
     "oilType": "Ndurance (Presentación 5 L)",
-    "hourMeter": "130001",
+    "hourMeter": "10000",
     "location": "Sala de Compresores",
     "status": "Activo",
     "active": true,
@@ -20,42 +20,31 @@
     "isDemo": false,
     "createdAt": "2026-10-12T14:36:54.486Z",
     "lastMaintenance": {
-      "date": "2026-10-25",
-      "hourMeter": 130001,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-2026-0007",
-      "notes": "Historial verificado: Plan A — 2000 horas"
+      "date": "2026-10-26",
+      "hourMeter": 10000,
+      "plan": "Plan C — 8000 horas",
+      "reportNumber": "REP-2026-0023",
+      "notes": "Historial verificado: Plan C — 8000 horas"
     },
     "nextMaintenance": {
-      "milestoneHours": 132000,
-      "plan": "Plan B — 4000 horas"
+      "milestoneHours": 12000,
+      "plan": "Plan A — 2000 horas"
     },
     "readingsHistory": [
       {
-        "id": "hist-boot-rep-1792974692726-3d8shs",
-        "date": "2026-10-25",
-        "hourMeter": 130001,
-        "hours": 130001,
+        "id": "maint-1793046895796",
+        "date": "2026-10-26",
+        "hourMeter": 10000,
+        "hours": 10000,
         "type": "mantenimiento",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-2026-0007",
-        "notes": "Historial verificado: Plan A — 2000 horas",
-        "user": "Técnico INDUSTRAC"
-      },
-      {
-        "id": "hist-boot-rep-1792973108083-td97ih",
-        "date": "2026-10-25",
-        "hourMeter": 130001,
-        "hours": 130001,
-        "type": "mantenimiento",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-2026-0005",
-        "notes": "Historial verificado: Plan A — 2000 horas",
-        "user": "Técnico INDUSTRAC"
+        "plan": "Plan C — 8000 horas",
+        "reportNumber": "REP-2026-0023",
+        "notes": "Historial verificado: Plan C — 8000 horas",
+        "user": "ABEL ELIAS LUNA YSIDRO"
       }
     ],
-    "hours": 130001,
-    "lastReadingDate": "2026-10-25"
+    "hours": 10000,
+    "lastReadingDate": "2026-10-26"
   },
   {
     "id": "eq-1791822487166",
@@ -70,62 +59,19 @@
     "pressure": "8.9 BAR",
     "airflow": "18.6 CFM",
     "oilType": "Ndurance (Presentación 5 L)",
-    "hourMeter": "100064",
+    "hourMeter": "0",
     "location": "Caseta Central de Fuerza",
     "status": "Activo",
     "active": true,
     "notes": "",
     "isDemo": false,
     "createdAt": "2026-10-12T16:28:07.169Z",
-    "lastMaintenance": {
-      "date": "2026-10-25",
-      "hourMeter": 100064,
-      "plan": "Plan A — 2000 horas",
-      "reportNumber": "REP-2026-0020",
-      "notes": "Historial verificado: Plan A — 2000 horas"
-    },
-    "nextMaintenance": {
-      "milestoneHours": 102000,
-      "plan": "Plan A — 2000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "maint-1792987582453-o85j1",
-        "date": "2026-10-25",
-        "hourMeter": 100064,
-        "hours": 100064,
-        "type": "mantenimiento",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-2026-0020",
-        "notes": "Historial verificado: Plan A — 2000 horas",
-        "user": "CARLOS GIOVANNY OJEDA CAMARGO"
-      },
-      {
-        "id": "hist-boot-rep-1792977885627-jyzhb0",
-        "date": "2026-10-25",
-        "hourMeter": 99726,
-        "hours": 99726,
-        "type": "mantenimiento",
-        "plan": "Plan B — 4000 horas",
-        "reportNumber": "REP-2026-0008",
-        "notes": "Historial verificado: Plan B — 4000 horas",
-        "user": "Ing. Martin Escriba"
-      },
-      {
-        "id": "hist-boot-rep-1792974168476-lw5lus",
-        "date": "2026-10-25",
-        "hourMeter": 99726,
-        "hours": 99726,
-        "type": "mantenimiento",
-        "plan": "Plan A — 2000 horas",
-        "reportNumber": "REP-2026-0006",
-        "notes": "Historial verificado: Plan A — 2000 horas",
-        "user": "ABEL ELIAS LUNA YSIDRO"
-      }
-    ],
-    "lastReadingDate": "2026-10-26",
-    "hours": 100064,
-    "updatedAt": "2026-10-26T16:55:56.732Z"
+    "lastMaintenance": null,
+    "nextMaintenance": null,
+    "readingsHistory": [],
+    "lastReadingDate": null,
+    "hours": 0,
+    "updatedAt": "2026-10-26T21:22:15.979Z"
   },
   {
     "id": "eq-1791822719857",
@@ -189,32 +135,11 @@
     "notes": "Compresor Kaeser ASD30. Módulo tipo SIGMA 2. Presión 132 PSI (registrado como 132 API en levantamiento).",
     "isDemo": false,
     "createdAt": "2026-10-24T13:25:00.000Z",
-    "readingsHistory": [
-      {
-        "id": "maint-1792986432951-umch9",
-        "date": "2026-10-25",
-        "hourMeter": 0,
-        "hours": 0,
-        "type": "mantenimiento",
-        "plan": "Plan B — 4000 horas",
-        "reportNumber": "REP-2026-0018",
-        "notes": "Historial verificado: Plan B — 4000 horas",
-        "user": "ABEL ELIAS LUNA YSIDRO"
-      }
-    ],
-    "lastMaintenance": {
-      "date": "2026-10-25",
-      "hourMeter": 0,
-      "plan": "Plan B — 4000 horas",
-      "reportNumber": "REP-2026-0018",
-      "notes": "Historial verificado: Plan B — 4000 horas"
-    },
-    "nextMaintenance": {
-      "milestoneHours": 2000,
-      "plan": "Plan A — 2000 horas"
-    },
+    "readingsHistory": [],
+    "lastMaintenance": null,
+    "nextMaintenance": null,
     "hours": 0,
-    "lastReadingDate": "2026-10-25"
+    "lastReadingDate": null
   },
   {
     "id": "eq-emusa-com-265485",
@@ -236,32 +161,11 @@
     "notes": "Compresor Atlas Copco GA22 (AII 265485). Módulo tipo MK IV - I.",
     "isDemo": false,
     "createdAt": "2026-10-24T13:25:00.000Z",
-    "lastMaintenance": {
-      "date": "2026-10-25",
-      "hourMeter": 0,
-      "plan": "Plan C — 8000 horas",
-      "reportNumber": "REP-2026-0010",
-      "notes": "Historial verificado: Plan C — 8000 horas"
-    },
-    "nextMaintenance": {
-      "milestoneHours": 2000,
-      "plan": "Plan A — 2000 horas"
-    },
-    "readingsHistory": [
-      {
-        "id": "hist-boot-rep-1792980672523-0aclzz",
-        "date": "2026-10-25",
-        "hourMeter": 0,
-        "hours": 0,
-        "type": "mantenimiento",
-        "plan": "Plan C — 8000 horas",
-        "reportNumber": "REP-2026-0010",
-        "notes": "Historial verificado: Plan C — 8000 horas",
-        "user": "ABEL ELIAS LUNA YSIDRO"
-      }
-    ],
+    "lastMaintenance": null,
+    "nextMaintenance": null,
+    "readingsHistory": [],
     "hours": 0,
-    "lastReadingDate": "2026-10-25"
+    "lastReadingDate": null
   },
   {
     "id": "eq-emusa-p1-501850",

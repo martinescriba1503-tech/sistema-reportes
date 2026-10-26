@@ -1605,6 +1605,15 @@ class IndustracApp {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.reportData)
         });
+        if (!res.ok && (res.status === 404 || res.status === 400)) {
+          // Si PUT falla por ID inexistente en el servidor, reintentar con POST
+          console.warn(`PUT /api/reports/${this.reportData.id} devolvió ${res.status}. Reintentando vía POST...`);
+          res = await fetch('/api/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.reportData)
+          });
+        }
       } else {
         res = await fetch('/api/reports', {
           method: 'POST',
@@ -1903,7 +1912,12 @@ class IndustracApp {
       this.reportData.status = 'Finalizado';
 
       // 3. Persist metadata to server first and guarantee correlativo synchronization
-      const savedOk = await this.saveDraft(false);
+      let savedOk = await this.saveDraft(false);
+      if (!savedOk) {
+        console.warn('Primer intento de guardado no confirmado en servidor. Reintentando vía POST directo...');
+        this.reportData.id = null;
+        savedOk = await this.saveDraft(false);
+      }
       if (!savedOk) {
         this.showToast('Aviso: El reporte no pudo sincronizarse con el servidor. Se generará el PDF localmente.', 'warning');
       }
@@ -2285,8 +2299,18 @@ class IndustracApp {
 
       if (res.ok && data.success !== false) {
         this.showToast(`Reporte ${rep ? rep.reportNumber : reportId} eliminado exitosamente.`, 'success');
-        // Await server reload to guarantee full synchronization
+
+        // Si el reporte eliminado era el borrador actual o tenía el mismo ID/correlativo, limpiar estado
+        if (this.reportData && (this.reportData.id === reportId || this.reportData.reportNumber === reportId)) {
+          this.reportData = this.getEmptyReport();
+          localStorage.removeItem('industrac_active_draft');
+          await this.restoreOrCreateDraft();
+        }
+
+        // Await server reload to guarantee full synchronization across Historial, Horómetros y Catálogo
         await this.loadReports();
+        await this.loadHorometersData();
+        await this.loadEquipments();
       } else {
         // Rollback on server error
         this.reports = previousReports;
@@ -2839,6 +2863,7 @@ class IndustracApp {
         this.showToast('Equipo eliminado del catálogo.', 'success');
         await this.loadEquipments();
         await this.loadClients();
+        await this.loadHorometersData();
       } else {
         const data = await res.json();
         throw new Error(data.error || 'No se pudo eliminar el equipo');
@@ -3721,6 +3746,9 @@ class IndustracApp {
           <button type="button" class="btn-horometer-action btn-action-hist" title="Ver Ficha Técnica e Historial" onclick="window.app.openHorometerHistoryModal('${item.id}')">
             📋
           </button>
+          <button type="button" class="btn-horometer-action btn-action-delete" title="Borrar / Restablecer Horómetro o Eliminar Equipo" onclick="window.app.openDeleteHorometerModal('${item.id}')" style="color: #DC2626; border-color: #FCA5A5;">
+            🗑️
+          </button>
         </div>
       `;
 
@@ -3809,6 +3837,9 @@ class IndustracApp {
             </button>
             <button type="button" class="btn btn-sm btn-secondary" onclick="window.app.openHorometerHistoryModal('${item.id}')">
               📋 Ficha
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.app.openDeleteHorometerModal('${item.id}')">
+              🗑️ Borrar
             </button>
           </div>
         </div>
@@ -4305,6 +4336,116 @@ class IndustracApp {
   closeHorometerHistoryModal() {
     const modal = document.getElementById('horometer-history-modal');
     if (modal) modal.classList.remove('active');
+  }
+
+  // --- MODAL: GESTIÓN DE BORRADO EN SECCIÓN DE HORÓMETROS ---
+  openDeleteHorometerModal(equipmentId) {
+    const eq = this.horometersData.find(e => e.id === equipmentId) || this.equipments.find(e => e.id === equipmentId);
+    if (!eq) return;
+
+    this.currentHorometerEquipment = eq;
+
+    const modal = document.getElementById('delete-horometer-modal');
+    if (!modal) return;
+
+    const eqIdEl = document.getElementById('delete-horo-eq-id');
+    if (eqIdEl) eqIdEl.value = eq.id;
+
+    const clientEl = document.getElementById('delete-horo-client-text');
+    if (clientEl) clientEl.textContent = eq.client || '-';
+
+    const serialOrId = eq.serialNumber ? `S/N: ${eq.serialNumber}` : (eq.apiCode ? `ID: ${eq.apiCode}` : 'S/N');
+    const modelEl = document.getElementById('delete-horo-model-text');
+    if (modelEl) modelEl.textContent = `${eq.model || 'Compresor'} • ${serialOrId}`;
+
+    const horoVal = (eq.lastHorometer !== null && eq.lastHorometer !== undefined && eq.lastHorometer !== '')
+      ? `${Number(eq.lastHorometer).toLocaleString()} hrs`
+      : ((eq.hourMeter !== null && eq.hourMeter !== undefined && eq.hourMeter !== '') ? `${Number(eq.hourMeter).toLocaleString()} hrs` : 'Pendiente de datos');
+    const hoursEl = document.getElementById('delete-horo-hours-text');
+    if (hoursEl) hoursEl.textContent = horoVal;
+
+    modal.classList.add('active');
+  }
+
+  closeDeleteHorometerModal() {
+    const modal = document.getElementById('delete-horometer-modal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  async confirmResetHorometer() {
+    const eqIdEl = document.getElementById('delete-horo-eq-id');
+    const eqId = eqIdEl ? eqIdEl.value : null;
+    if (!eqId) return;
+
+    this.closeDeleteHorometerModal();
+
+    const confirmed = await this.showConfirmModal({
+      title: 'Restablecer Horómetro',
+      message: '¿Está seguro de restablecer el horómetro y borrar el historial de lecturas de este equipo?<br><br><span style="color: var(--color-text-muted); font-size: 0.85rem;">El equipo se conservará en el catálogo y su estado pasará a <strong>PENDIENTE DE DATOS</strong>.</span>',
+      confirmText: '🔄 Sí, Restablecer Horómetro',
+      cancelText: 'Cancelar',
+      isDanger: false,
+      icon: '🔄'
+    });
+
+    if (!confirmed) return;
+
+    try {
+      this.showToast('Restableciendo horómetro del equipo...', 'info');
+      const res = await fetch(`/api/equipments/${encodeURIComponent(eqId)}/horometer`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success !== false) {
+        this.showToast('Horómetro restablecido a Pendiente de Datos exitosamente.', 'success');
+        await this.loadHorometersData();
+        await this.loadEquipments();
+      } else {
+        throw new Error(data.error || 'Error al restablecer horómetro');
+      }
+    } catch (e) {
+      console.error('Error al restablecer horómetro:', e);
+      this.showToast('No se pudo restablecer el horómetro: ' + e.message, 'error');
+    }
+  }
+
+  async confirmDeleteEquipmentFromHorometer() {
+    const eqIdEl = document.getElementById('delete-horo-eq-id');
+    const eqId = eqIdEl ? eqIdEl.value : null;
+    if (!eqId) return;
+
+    this.closeDeleteHorometerModal();
+
+    const eq = this.equipments.find(e => e.id === eqId) || this.horometersData.find(e => e.id === eqId);
+    const eqName = eq ? `${eq.model || 'Compresor'} (${eq.apiCode || eq.serialNumber || 'S/N'})` : 'este compresor';
+
+    const confirmed = await this.showConfirmModal({
+      title: 'Eliminar Equipo Permanentemente',
+      message: `¿Está seguro de eliminar <strong>${eqName}</strong> por completo del sistema?<br><br><span style="color: #DC2626; font-size: 0.85rem; font-weight: 600;">Esta acción removerá el equipo tanto del catálogo como del tablero de horómetros y próximos mantenimientos.</span>`,
+      confirmText: '🗑️ Sí, Eliminar Equipo',
+      cancelText: 'Cancelar',
+      isDanger: true,
+      icon: '🗑️'
+    });
+
+    if (!confirmed) return;
+
+    try {
+      this.showToast('Eliminando equipo del sistema...', 'info');
+      const res = await fetch(`/api/equipments/${encodeURIComponent(eqId)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        this.showToast('Equipo eliminado exitosamente.', 'success');
+        await this.loadHorometersData();
+        await this.loadEquipments();
+        await this.loadClients();
+      } else {
+        throw new Error(data.error || 'Error al eliminar el equipo');
+      }
+    } catch (e) {
+      console.error('Error al eliminar equipo:', e);
+      this.showToast('No se pudo eliminar el equipo: ' + e.message, 'error');
+    }
   }
 }
 

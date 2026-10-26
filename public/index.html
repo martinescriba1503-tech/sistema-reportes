@@ -2231,6 +2231,55 @@
     </div>
   </div>
 
+  <!-- Modal: Opciones de Borrado en Sección de Horómetros -->
+  <div id="delete-horometer-modal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 520px; text-align: left;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); padding: 1rem 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="font-size: 1.4rem;">🗑️</span>
+          <div>
+            <h3 id="delete-horo-modal-title" style="color: white; margin: 0; font-size: 1.15rem; font-weight: 700;">Gestión de Borrado de Horómetro</h3>
+            <p id="delete-horo-modal-subtitle" style="font-size: 0.8rem; color: #FECACA; margin: 0.2rem 0 0;">Seleccione la acción a realizar para este compresor</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" onclick="window.app.closeDeleteHorometerModal()" style="color: white;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.35rem 1.25rem;">
+        <input type="hidden" id="delete-horo-eq-id" />
+        <div id="delete-horo-info-box" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.9rem 1rem; margin-bottom: 1.15rem;">
+          <div style="font-size: 0.85rem; color: #64748B;">Cliente: <strong id="delete-horo-client-text" style="color: #031240;">-</strong></div>
+          <div style="font-size: 0.95rem; font-weight: 700; color: #031240; margin-top: 0.25rem;" id="delete-horo-model-text">-</div>
+          <div style="font-size: 0.82rem; color: #475569; margin-top: 0.25rem;">Horómetro actual: <span id="delete-horo-hours-text" style="font-weight: 600; color: #0284C7;">-</span></div>
+        </div>
+
+        <p style="font-size: 0.9rem; color: #334155; margin-bottom: 1rem; font-weight: 500;">¿Qué acción desea ejecutar en el tablero de horómetros?</p>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <!-- Opción 1: Restablecer / Borrar Horómetro -->
+          <button type="button" class="btn" onclick="window.app.confirmResetHorometer()" style="background: #FFF; border: 1.5px solid #F59E0B; color: #B45309; padding: 0.85rem 1rem; border-radius: 8px; text-align: left; display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer; transition: all 0.2s;">
+            <span style="font-size: 1.35rem; line-height: 1;">🔄</span>
+            <div>
+              <strong style="display: block; font-size: 0.92rem; color: #92400E;">Restablecer / Borrar Lecturas de Horómetro</strong>
+              <span style="font-size: 0.8rem; color: #78350F; display: block; margin-top: 0.2rem;">Limpia el último horómetro, fecha de servicio y lecturas acumuladas. El equipo vuelve a "PENDIENTE DE DATOS" conservándose en el catálogo.</span>
+            </div>
+          </button>
+
+          <!-- Opción 2: Eliminar Equipo del Catálogo y Horómetros -->
+          <button type="button" class="btn" onclick="window.app.confirmDeleteEquipmentFromHorometer()" style="background: #FFF; border: 1.5px solid #EF4444; color: #DC2626; padding: 0.85rem 1rem; border-radius: 8px; text-align: left; display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer; transition: all 0.2s;">
+            <span style="font-size: 1.35rem; line-height: 1;">🗑️</span>
+            <div>
+              <strong style="display: block; font-size: 0.92rem; color: #B91C1C;">Eliminar Equipo Permanentemente</strong>
+              <span style="font-size: 0.8rem; color: #991B1B; display: block; margin-top: 0.2rem;">Elimina el equipo por completo tanto del catálogo como del tablero de horómetros y próximos mantenimientos.</span>
+            </div>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 0.85rem 1.25rem; display: flex; justify-content: flex-end; background: #F8FAFC; border-top: 1px solid var(--color-border);">
+        <button type="button" class="btn btn-secondary" onclick="window.app.closeDeleteHorometerModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirmation Dialog Modal -->
   <div id="confirm-modal" class="modal-overlay">
     <div class="modal-card" style="max-width: 460px;">

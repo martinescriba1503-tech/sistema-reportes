@@ -2628,6 +2628,12 @@ input:checked + .slider:before {
   border-color: #C4B5FD;
 }
 
+.btn-horometer-action.btn-action-delete:hover {
+  background: #FEF2F2;
+  color: #DC2626;
+  border-color: #FCA5A5;
+}
+
 /* Mobile Responsive Cards */
 .horometers-mobile-container {
   display: none;
