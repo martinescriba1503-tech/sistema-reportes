@@ -107,10 +107,10 @@ class IndustracPdfGenerator {
     doc.setFontSize(7.5);
     doc.setTextColor(...this.colors.textMuted);
     const companyLines = [
-      'INDUSTRAC S.A.C. - RUC: 20601894231',
+      'INDUSTRAC S.A.C. - RUC: 20524154626',
       'Servicio Técnico Autorizado Multimarca',
-      'Central: (01) 480-0220 | Cel: +51 987 654 321',
-      'contacto@industrac.pe | www.industrac.pe'
+      'Cel: +51 969 195 015',
+      'ventas@industrac.pe | www.industrac.com'
     ];
     doc.text(companyLines, pageWidth - margin, currentY + 3, { align: 'right' });
 
@@ -659,7 +659,7 @@ class IndustracPdfGenerator {
       signH,
       'FIRMA DEL TÉCNICO RESPONSABLE',
       report.techSignature,
-      report.technician || 'Técnico Especialista',
+      report.techName || report.technician || 'Técnico Especialista',
       'INDUSTRAC S.A.C. - Dpto. Técnico'
     );
 
@@ -756,7 +756,28 @@ class IndustracPdfGenerator {
     // Signature Canvas Image
     if (signatureDataUrl) {
       try {
-        doc.addImage(signatureDataUrl, 'PNG', x + 10, y + 8, w - 20, 20, undefined, 'FAST');
+        const maxW = w - 16;
+        const maxH = 22;
+        let drawW = maxW;
+        let drawH = maxH;
+        if (doc.getImageProperties) {
+          try {
+            const imgProps = doc.getImageProperties(signatureDataUrl);
+            if (imgProps && imgProps.width && imgProps.height) {
+              const ratio = imgProps.width / imgProps.height;
+              if (ratio > maxW / maxH) {
+                drawW = maxW;
+                drawH = maxW / ratio;
+              } else {
+                drawH = maxH;
+                drawW = maxH * ratio;
+              }
+            }
+          } catch (propErr) {}
+        }
+        const drawX = x + (w - drawW) / 2;
+        const drawY = y + 8 + (maxH - drawH) / 2;
+        doc.addImage(signatureDataUrl, 'PNG', drawX, drawY, drawW, drawH, undefined, 'FAST');
       } catch (e) {
         console.warn('Error incrustando firma:', e);
       }

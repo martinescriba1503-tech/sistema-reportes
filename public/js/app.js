@@ -203,7 +203,10 @@ class IndustracApp {
     const techCanvas = document.getElementById('tech-signature-canvas');
     const techPlaceholder = document.getElementById('tech-sig-placeholder');
     if (techCanvas) {
-      this.techSigPad = new DigitalSignaturePad(techCanvas, techPlaceholder);
+      this.techSigPad = new DigitalSignaturePad(techCanvas, techPlaceholder, (dataUrl) => {
+        this.reportData.techSignature = dataUrl;
+        this.triggerAutoSave();
+      });
       document.getElementById('btn-clear-tech-sig')?.addEventListener('click', () => {
         this.techSigPad.clear();
         this.reportData.techSignature = null;
@@ -214,7 +217,10 @@ class IndustracApp {
     const clientCanvas = document.getElementById('client-signature-canvas');
     const clientPlaceholder = document.getElementById('client-sig-placeholder');
     if (clientCanvas) {
-      this.clientSigPad = new DigitalSignaturePad(clientCanvas, clientPlaceholder);
+      this.clientSigPad = new DigitalSignaturePad(clientCanvas, clientPlaceholder, (dataUrl) => {
+        this.reportData.clientSignature = dataUrl;
+        this.triggerAutoSave();
+      });
       document.getElementById('btn-clear-client-sig')?.addEventListener('click', () => {
         this.clientSigPad.clear();
         this.reportData.clientSignature = null;
@@ -560,6 +566,19 @@ class IndustracApp {
         const key = detectHoursKey(this.reportData.maintenanceType) || detectHoursKey(this.reportData.hourMeter) || '2000';
         this.applyStandardObservation(key, false);
       }
+    }
+
+    // If reaching step 8 (Firmas), ensure technician name is set and canvases resize to visible dimensions
+    if (stepNumber === 8) {
+      const techInput = document.getElementById('field-tech-name');
+      if (techInput && !techInput.value && this.reportData.technician) {
+        techInput.value = this.reportData.technician;
+        this.reportData.techName = this.reportData.technician;
+      }
+      requestAnimationFrame(() => {
+        this.techSigPad?.resize();
+        this.clientSigPad?.resize();
+      });
     }
 
     // If reaching step 9 (Review), render summary
@@ -1380,13 +1399,13 @@ class IndustracApp {
     this.reportData.recommendations = getValue('field-recommendations');
 
     // Step 8: Signatures
-    if (this.techSigPad && !this.techSigPad.isEmpty()) {
-      this.reportData.techSignature = this.techSigPad.toDataURL();
+    if (this.techSigPad) {
+      this.reportData.techSignature = this.techSigPad.isEmpty() ? null : this.techSigPad.toDataURL();
     }
-    this.reportData.techName = getValue('field-tech-name');
+    this.reportData.techName = getValue('field-tech-name') || this.reportData.technician;
 
-    if (this.clientSigPad && !this.clientSigPad.isEmpty()) {
-      this.reportData.clientSignature = this.clientSigPad.toDataURL();
+    if (this.clientSigPad) {
+      this.reportData.clientSignature = this.clientSigPad.isEmpty() ? null : this.clientSigPad.toDataURL();
     }
     this.reportData.clientSignerName = getValue('field-client-signer-name');
     this.reportData.clientSignerPosition = getValue('field-client-signer-pos');
@@ -1541,11 +1560,19 @@ class IndustracApp {
     setVal('field-client-signer-name', this.reportData.clientSignerName);
     setVal('field-client-signer-pos', this.reportData.clientSignerPosition);
 
-    if (this.techSigPad && this.reportData.techSignature) {
-      this.techSigPad.loadFromDataURL(this.reportData.techSignature);
+    if (this.techSigPad) {
+      if (this.reportData.techSignature) {
+        this.techSigPad.loadFromDataURL(this.reportData.techSignature);
+      } else {
+        this.techSigPad.clear();
+      }
     }
-    if (this.clientSigPad && this.reportData.clientSignature) {
-      this.clientSigPad.loadFromDataURL(this.reportData.clientSignature);
+    if (this.clientSigPad) {
+      if (this.reportData.clientSignature) {
+        this.clientSigPad.loadFromDataURL(this.reportData.clientSignature);
+      } else {
+        this.clientSigPad.clear();
+      }
     }
   }
 
@@ -1767,11 +1794,26 @@ class IndustracApp {
         <div class="review-section-card">
           <div class="review-section-header">
             <h4>7 & 8. Fotos y Firmas</h4>
-            <button class="btn-edit-step" onclick="window.app.goToStep(7)">Editar</button>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn-edit-step" onclick="window.app.goToStep(7)" title="Editar fotos">Fotos</button>
+              <button class="btn-edit-step" onclick="window.app.goToStep(8)" title="Editar firmas">Firmas</button>
+            </div>
           </div>
           <div class="review-row"><span class="label">Fotografías Adjuntas:</span><span class="val">${photosCount} foto(s)</span></div>
-          <div class="review-row"><span class="label">Firma Técnico:</span><span class="val" style="color:${hasTechSig ? 'green' : 'red'}">${hasTechSig ? '✓ Firmado' : '✗ Pendiente'}</span></div>
-          <div class="review-row"><span class="label">Firma Cliente:</span><span class="val" style="color:${hasClientSig ? 'green' : 'red'}">${hasClientSig ? '✓ Firmado' : '✗ Pendiente'}</span></div>
+          <div class="review-row">
+            <span class="label">Firma Técnico:</span>
+            <span class="val" style="color:${hasTechSig ? 'green' : 'red'}; font-weight: 600;">
+              ${hasTechSig ? '✓ Firmado' : '✗ Pendiente'}
+              <span style="color:var(--color-text-muted); font-size:0.8rem; font-weight:normal;"> (${this.reportData.techName || this.reportData.technician || 'Sin asignar'})</span>
+            </span>
+          </div>
+          <div class="review-row">
+            <span class="label">Firma Cliente:</span>
+            <span class="val" style="color:${hasClientSig ? 'green' : 'red'}; font-weight: 600;">
+              ${hasClientSig ? '✓ Firmado' : '✗ Pendiente'}
+              <span style="color:var(--color-text-muted); font-size:0.8rem; font-weight:normal;"> (${this.reportData.clientSignerName || 'Representante'})</span>
+            </span>
+          </div>
         </div>
       </div>
     `;
@@ -1882,23 +1924,57 @@ class IndustracApp {
 
     // 1. Upload to server asynchronously for permanent link & Google Drive backup
     if (reportId) {
+      const cleanBase64 = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1].trim() : pdfBase64.trim();
+      let driveLinked = false;
+
       fetch(`/api/reports/${reportId}/pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdfBase64, fileName })
       })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then(data => {
-        if (data.driveDownloadUrl || data.driveUrl) {
+        if (data && (data.driveDownloadUrl || data.driveUrl)) {
+          driveLinked = true;
           const driveBtn = document.getElementById('btn-modal-drive-link');
           if (driveBtn) {
             driveBtn.href = data.driveDownloadUrl || data.driveUrl;
             driveBtn.style.display = 'inline-flex';
           }
           this.showToast('☁️ PDF enlazado a Google Drive (PDF_REPORTES2027)', 'success');
+        } else {
+          throw new Error('Servidor no devolvió URL de Drive');
         }
       })
-      .catch(err => console.warn('Aviso: no se pudo guardar copia en disco del servidor o Drive:', err));
+      .catch(err => {
+        console.warn('Aviso: el servidor no pudo sincronizar a Drive, activando canal directo cliente-Drive:', err);
+        // Canal de respaldo directo desde el navegador hacia Google Apps Script (inmune a límites de servidor o Vercel)
+        if (!driveLinked) {
+          const directWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+          const repNum = this.reportData.reportNumber || reportId;
+          fetch(directWebhook, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'upload_pdf_drive',
+              folderName: 'PDF_REPORTES2027',
+              reportId: reportId,
+              reportNumber: repNum,
+              fileName: fileName,
+              pdfBase64: cleanBase64
+            })
+          })
+          .then(() => {
+            console.log('[Google Drive] Respaldo directo enviado a la carpeta PDF_REPORTES2027.');
+            this.showToast('☁️ PDF enviado a Google Drive (PDF_REPORTES2027)', 'success');
+          })
+          .catch(eDirect => console.warn('[Google Drive] Error en respaldo directo:', eDirect));
+        }
+      });
     }
 
     // 2. Direct browser download trigger via DOM anchor

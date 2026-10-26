@@ -21,15 +21,19 @@ const COUNTER_FILE = path.join(DATA_DIR, 'counter.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 // Ensure data folder exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {}
 
 // Helpers for thread-safe JSON operations
 function readJson(filePath, defaultValue = []) {
   try {
     if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), 'utf8');
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), 'utf8');
+      } catch (e) {}
       return defaultValue;
     }
     const data = fs.readFileSync(filePath, 'utf8');
@@ -303,7 +307,18 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
     const buffer = Buffer.from(cleanBase64, 'base64');
     const filePath = path.join(PDFS_DIR, `${req.params.id}.pdf`);
 
-    fs.writeFileSync(filePath, buffer);
+    // Intentar guardar copia local en disco si es escribible (o /tmp si es Vercel serverless)
+    try {
+      if (!fs.existsSync(PDFS_DIR)) {
+        fs.mkdirSync(PDFS_DIR, { recursive: true });
+      }
+      fs.writeFileSync(filePath, buffer);
+    } catch (fsErr) {
+      console.warn('[Storage] Entorno serverless/solo lectura (Vercel). Guardando en /tmp:', fsErr.message);
+      try {
+        fs.writeFileSync(path.join('/tmp', `${req.params.id}.pdf`), buffer);
+      } catch (tmpErr) {}
+    }
 
     const reports = readJson(REPORTS_FILE, []);
     const reportIndex = reports.findIndex(r => r.id === req.params.id || r.reportNumber === req.params.id);
@@ -312,13 +327,16 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
     const fileName = requestedFileName || generateReportPdfFileName(report);
 
     let driveResult = null;
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: '', autoSyncSheets: true });
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
 
-    if (settings.googleSheetsWebhookUrl && settings.googleSheetsWebhookUrl.trim()) {
+    if (webhookUrl) {
       try {
         const repNum = report && report.reportNumber ? report.reportNumber : req.params.id;
 
-        const driveRes = await fetch(settings.googleSheetsWebhookUrl.trim(), {
+        console.log(`[Google Drive] Subiendo PDF "${fileName}" a carpeta PDF_REPORTES2027...`);
+        const driveRes = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -333,12 +351,15 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
         const driveData = await driveRes.json();
         if (driveData && driveData.status === 'success') {
           driveResult = driveData;
+          console.log(`[Google Drive] ¡Subida exitosa a Drive! URL: ${driveData.driveViewUrl}`);
           if (report) {
             report.pdfDriveUrl = driveData.driveViewUrl;
             report.pdfDriveDownloadUrl = driveData.driveDownloadUrl;
             reports[reportIndex] = report;
             writeJson(REPORTS_FILE, reports);
           }
+        } else {
+          console.warn('[Google Drive] Respuesta no exitosa de Apps Script:', driveData);
         }
       } catch (eDrive) {
         console.warn('[Google Drive Sync] Aviso: no se pudo sincronizar a Google Drive:', eDrive.message);
@@ -346,7 +367,7 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
     }
 
     res.json({
-      message: driveResult ? 'PDF guardado en servidor y Google Drive' : 'PDF guardado en servidor',
+      message: driveResult ? 'PDF guardado en servidor y Google Drive' : 'PDF procesado exitosamente',
       fileName: fileName,
       downloadUrl: `/api/reports/${req.params.id}/pdf`,
       driveUrl: driveResult?.driveViewUrl || null,
@@ -354,7 +375,7 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
     });
   } catch (err) {
     console.error('Error guardando PDF:', err);
-    res.status(500).json({ error: 'Error al procesar archivo PDF' });
+    res.status(500).json({ error: 'Error al procesar archivo PDF: ' + err.message });
   }
 });
 
@@ -2696,7 +2717,11 @@ app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`[INDUSTRAC] Servidor iniciado exitosamente en http://localhost:${PORT}`);
-});
+// Start Server (only when not running as a Vercel serverless function)
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`[INDUSTRAC] Servidor iniciado exitosamente en http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
