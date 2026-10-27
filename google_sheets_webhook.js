@@ -315,11 +315,21 @@ function doPost(e) {
     // 7. ELIMINAR CLIENTE DE GOOGLE SHEETS
     if (action === 'delete_client') {
       var clientSheet = ss.getSheetByName('Clientes');
-      if (clientSheet && data.clientId) {
-        var row = findRowByValue(clientSheet, 1, data.clientId);
-        if (row > 1) {
-          clientSheet.deleteRow(row);
-          return responseJson({ status: 'success', message: 'Cliente eliminado de Google Sheets.' });
+      if (clientSheet && (data.clientId || data.clientName)) {
+        var targetId = data.clientId ? String(data.clientId).trim().toLowerCase() : '';
+        var targetName = data.clientName ? String(data.clientName).trim().toLowerCase() : '';
+        var cData = clientSheet.getDataRange().getValues();
+        var cDeleted = 0;
+        for (var cr = cData.length - 1; cr >= 1; cr--) {
+          var cId = String(cData[cr][0] || '').trim().toLowerCase();
+          var cName = String(cData[cr][1] || '').trim().toLowerCase();
+          if ((targetId && cId === targetId) || (targetName && cName === targetName)) {
+            clientSheet.deleteRow(cr + 1);
+            cDeleted++;
+          }
+        }
+        if (cDeleted > 0) {
+          return responseJson({ status: 'success', message: 'Cliente eliminado de Google Sheets (' + cDeleted + ' fila/s).' });
         }
       }
       return responseJson({ status: 'success', message: 'Cliente no encontrado o ya eliminado.' });
@@ -447,14 +457,31 @@ function doPost(e) {
     // 10. ELIMINAR COMPRESOR DE GOOGLE SHEETS
     if (action === 'delete_equipment') {
       var eqSheet = ss.getSheetByName('Parque de Compresores');
-      if (eqSheet && data.equipmentId) {
-        var row = findRowByValue(eqSheet, 1, data.equipmentId);
-        if (row === -1 && data.apiCode) {
-          row = findRowByValue(eqSheet, 2, data.apiCode);
+      if (eqSheet && (data.equipmentId || data.apiCode || data.model)) {
+        var targetId = data.equipmentId ? String(data.equipmentId).trim().toLowerCase() : '';
+        var targetApi = data.apiCode ? String(data.apiCode).trim().toLowerCase() : '';
+        var targetModel = data.model ? String(data.model).trim().toLowerCase() : '';
+        
+        var eqSheetData = eqSheet.getDataRange().getValues();
+        var eqDeleted = 0;
+        for (var er = eqSheetData.length - 1; er >= 1; er--) {
+          var rowId = String(eqSheetData[er][0] || '').trim().toLowerCase();
+          var rowApi = String(eqSheetData[er][1] || '').trim().toLowerCase();
+          var rowModel = String(eqSheetData[er][3] || '').trim().toLowerCase();
+
+          var match = false;
+          if (targetId && rowId && rowId === targetId) match = true;
+          if (targetApi && rowApi && rowApi === targetApi) match = true;
+          if (!match && targetId && rowApi && targetId === rowApi) match = true;
+          if (!match && targetApi && rowId && targetApi === rowId) match = true;
+
+          if (match) {
+            eqSheet.deleteRow(er + 1);
+            eqDeleted++;
+          }
         }
-        if (row > 1) {
-          eqSheet.deleteRow(row);
-          return responseJson({ status: 'success', message: 'Compresor eliminado de Google Sheets.' });
+        if (eqDeleted > 0) {
+          return responseJson({ status: 'success', message: 'Compresor eliminado de Google Sheets (' + eqDeleted + ' fila/s).' });
         }
       }
       return responseJson({ status: 'success', message: 'Compresor no encontrado o ya eliminado.' });
@@ -637,8 +664,10 @@ function getOrCreateSheet(ss, name, headers) {
 
 function findRowByValue(sheet, colIndex, value) {
   var data = sheet.getDataRange().getValues();
+  var target = String(value || '').trim().toLowerCase();
+  if (!target) return -1;
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][colIndex - 1]).trim() === String(value).trim()) {
+    if (String(data[i][colIndex - 1] || '').trim().toLowerCase() === target) {
       return i + 1;
     }
   }

@@ -652,26 +652,42 @@ app.put('/api/clients/:id', async (req, res) => {
 
 app.delete('/api/clients/:id', async (req, res) => {
   let clients = readJson(CLIENTS_FILE, []);
-  const clientToDelete = clients.find(c => c.id === req.params.id);
+  const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
+  const clientToDelete = clients.find(c => 
+    c.id === req.params.id || 
+    (rawParamId && c.id === rawParamId) ||
+    (c.name && rawParamId && c.name.toLowerCase() === rawParamId.toLowerCase())
+  );
 
   if (!clientToDelete) {
     return res.status(404).json({ error: 'Cliente no encontrado.' });
   }
 
-  clients = clients.filter(c => c.id !== req.params.id);
+  clients = clients.filter(c => c.id !== clientToDelete.id);
   writeJson(CLIENTS_FILE, clients);
+  await deleteClientFromGoogleSheets(clientToDelete).catch(() => null);
   await syncClientsToGoogleSheets().catch(() => null);
 
   // Also remove or disassociate its equipments if requested
   const removeEquipments = req.query.removeEquipments === 'true';
   let equipments = readJson(EQUIPMENTS_FILE, []);
   if (removeEquipments) {
-    equipments = equipments.filter(e => e.clientId !== req.params.id && e.client !== clientToDelete.name);
+    const toRemove = equipments.filter(e => 
+      e.clientId === clientToDelete.id || 
+      (e.client && e.client.toLowerCase() === clientToDelete.name.toLowerCase())
+    );
+    for (const eqItem of toRemove) {
+      await deleteEquipmentFromGoogleSheets(eqItem).catch(() => null);
+    }
+    equipments = equipments.filter(e => 
+      e.clientId !== clientToDelete.id && 
+      (e.client || '').toLowerCase() !== clientToDelete.name.toLowerCase()
+    );
     writeJson(EQUIPMENTS_FILE, equipments);
     await syncEquipmentsToGoogleSheets().catch(() => null);
   }
 
-  res.json({ message: 'Cliente eliminado exitosamente.' });
+  res.json({ success: true, message: 'Cliente eliminado exitosamente.' });
 });
 
 // --- EQUIPMENTS ENDPOINTS ---
@@ -817,7 +833,13 @@ app.post('/api/equipments', async (req, res) => {
 
 app.put('/api/equipments/:id', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
-  const idx = equipments.findIndex(e => e.id === req.params.id);
+  const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
+  const idx = equipments.findIndex(e => 
+    e.id === req.params.id || 
+    (rawParamId && e.id === rawParamId) ||
+    (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
+    (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
+  );
 
   if (idx === -1) {
     return res.status(404).json({ error: 'Equipo no encontrado.' });
@@ -825,7 +847,11 @@ app.put('/api/equipments/:id', async (req, res) => {
 
   // Check unique apiCode if changed
   if (req.body.apiCode && req.body.apiCode !== equipments[idx].apiCode) {
-    const duplicate = equipments.find(e => e.id !== req.params.id && e.apiCode && e.apiCode.toLowerCase() === req.body.apiCode.trim().toLowerCase());
+    const duplicate = equipments.find(e => 
+      e.id !== equipments[idx].id && 
+      e.apiCode && 
+      e.apiCode.toLowerCase() === req.body.apiCode.trim().toLowerCase()
+    );
     if (duplicate) {
       return res.status(400).json({ error: `El código API "${req.body.apiCode}" ya pertenece a otra máquina.` });
     }
@@ -844,6 +870,7 @@ app.put('/api/equipments/:id', async (req, res) => {
   };
 
   writeJson(EQUIPMENTS_FILE, equipments);
+  await saveEquipmentToGoogleSheets(equipments[idx]).catch(() => null);
   await syncEquipmentsToGoogleSheets().catch(() => null);
   res.json(equipments[idx]);
 });
@@ -851,7 +878,13 @@ app.put('/api/equipments/:id', async (req, res) => {
 // Toggle equipment active/inactive status without deleting history
 app.patch('/api/equipments/:id/status', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
-  const idx = equipments.findIndex(e => e.id === req.params.id);
+  const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
+  const idx = equipments.findIndex(e => 
+    e.id === req.params.id || 
+    (rawParamId && e.id === rawParamId) ||
+    (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
+    (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
+  );
 
   if (idx === -1) {
     return res.status(404).json({ error: 'Equipo no encontrado.' });
@@ -863,22 +896,33 @@ app.patch('/api/equipments/:id/status', async (req, res) => {
   equipments[idx].updatedAt = new Date().toISOString();
 
   writeJson(EQUIPMENTS_FILE, equipments);
+  await saveEquipmentToGoogleSheets(equipments[idx]).catch(() => null);
   await syncEquipmentsToGoogleSheets().catch(() => null);
   res.json({ message: `Equipo marcado como ${newStatus}`, equipment: equipments[idx] });
 });
 
 app.delete('/api/equipments/:id', async (req, res) => {
   let equipments = readJson(EQUIPMENTS_FILE, []);
-  const eq = equipments.find(e => e.id === req.params.id);
+  const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
+  const eq = equipments.find(e => 
+    e.id === req.params.id || 
+    (rawParamId && e.id === rawParamId) ||
+    (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
+    (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
+  );
 
   if (!eq) {
     return res.status(404).json({ error: 'Equipo no encontrado.' });
   }
 
-  equipments = equipments.filter(e => e.id !== req.params.id);
+  equipments = equipments.filter(e => 
+    e.id !== eq.id && 
+    !(eq.apiCode && e.apiCode && e.apiCode.toLowerCase() === eq.apiCode.toLowerCase())
+  );
   writeJson(EQUIPMENTS_FILE, equipments);
+  await deleteEquipmentFromGoogleSheets(eq).catch(() => null);
   await syncEquipmentsToGoogleSheets().catch(() => null);
-  res.json({ message: 'Equipo eliminado exitosamente.' });
+  res.json({ success: true, message: 'Equipo eliminado exitosamente.' });
 });
 
 // Endpoint para borrar/restablecer datos de horómetro de un equipo (dejándolo en "Pendiente de datos")
@@ -2269,6 +2313,90 @@ async function deleteReportFromGoogleSheets(report) {
   }
 }
 
+async function saveEquipmentToGoogleSheets(equipment) {
+  try {
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl || settings.autoSyncSheets === false || !equipment) return null;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save_equipment',
+        equipment: equipment
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await res.json().catch(() => null);
+  } catch (err) {
+    console.warn('[Google Sheets Sync] Aviso: save_equipment finalizado:', err.message);
+    return null;
+  }
+}
+
+async function deleteEquipmentFromGoogleSheets(equipment) {
+  try {
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl || settings.autoSyncSheets === false || !equipment) return null;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_equipment',
+        equipmentId: equipment.id,
+        apiCode: equipment.apiCode || equipment.serialNumber,
+        model: equipment.model
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await res.json().catch(() => null);
+  } catch (err) {
+    console.warn('[Google Sheets Sync] Aviso: delete_equipment finalizado:', err.message);
+    return null;
+  }
+}
+
+async function deleteClientFromGoogleSheets(client) {
+  try {
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl || settings.autoSyncSheets === false || !client) return null;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_client',
+        clientId: client.id,
+        clientName: client.name
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await res.json().catch(() => null);
+  } catch (err) {
+    console.warn('[Google Sheets Sync] Aviso: delete_client finalizado:', err.message);
+    return null;
+  }
+}
+
 async function syncClientsToGoogleSheets() {
   try {
     const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
@@ -2278,7 +2406,7 @@ async function syncClientsToGoogleSheets() {
 
     const clients = readJson(CLIENTS_FILE, []).filter(c => !c.isDemo && !(c.name && c.name.toLowerCase().includes('demo')));
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const res = await fetch(webhookUrl, {
       method: 'POST',
@@ -2306,7 +2434,7 @@ async function syncEquipmentsToGoogleSheets() {
 
     const equipments = readJson(EQUIPMENTS_FILE, []).filter(e => !e.isDemo);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const res = await fetch(webhookUrl, {
       method: 'POST',

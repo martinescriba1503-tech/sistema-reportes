@@ -669,33 +669,42 @@ class IndustracApp {
       if (!res.ok) throw new Error('Error al consultar /api/clients');
       const serverClients = await res.json();
 
-      // Fusión inteligente no destructiva: mantener clientes creados localmente que el servidor aún no tenga
+      let deletedClients = [];
+      try {
+        deletedClients = JSON.parse(localStorage.getItem('industrac_deleted_clients') || '[]');
+      } catch (e) {}
+
+      const filteredServerClients = (serverClients || []).filter(sc => 
+        sc && 
+        !deletedClients.includes(sc.id) && 
+        !(sc.name && deletedClients.includes(sc.name.trim().toLowerCase()))
+      );
+
       const clientMap = new Map();
       (this.clients || []).forEach(c => {
-        if (c && c.id) clientMap.set(c.id, c);
-      });
-      (serverClients || []).forEach(sc => {
-        if (sc && sc.id) {
-          const existing = clientMap.get(sc.id) || {};
-          clientMap.set(sc.id, { ...existing, ...sc });
+        if (!c || !c.id) return;
+        if (!deletedClients.includes(c.id) && !(c.name && deletedClients.includes(c.name.trim().toLowerCase()))) {
+          clientMap.set(c.id, c);
         }
       });
 
-      const mergedClients = Array.from(clientMap.values());
+      filteredServerClients.forEach(sc => {
+        if (!sc || !sc.id) return;
+        const existing = clientMap.get(sc.id);
+        if (existing) {
+          const existingTime = new Date(existing.updatedAt || 0).getTime();
+          const serverTime = new Date(sc.updatedAt || 0).getTime();
+          if (existingTime > serverTime) {
+            clientMap.set(sc.id, { ...sc, ...existing });
+          } else {
+            clientMap.set(sc.id, { ...existing, ...sc });
+          }
+        } else {
+          clientMap.set(sc.id, sc);
+        }
+      });
 
-      // Si hay clientes en memoria/local que no están en el servidor (p. ej. por reinicio o Vercel), re-sincronizarlos
-      const missingOnServer = mergedClients.filter(c => !serverClients.some(sc => sc.id === c.id));
-      if (missingOnServer.length > 0) {
-        missingOnServer.forEach(mc => {
-          fetch('/api/clients', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(mc)
-          }).catch(() => {});
-        });
-      }
-
-      this.clients = mergedClients;
+      this.clients = Array.from(clientMap.values());
       this.persistLocalCatalogCache();
       this.recalculateClientCounts();
       this.renderClientsList();
@@ -718,35 +727,49 @@ class IndustracApp {
       if (!res.ok) throw new Error('Error al consultar /api/equipments');
       const serverEquipments = await res.json();
 
-      // Fusión inteligente no destructiva: mantener compresores registrados localmente
+      let deletedIds = [];
+      try {
+        deletedIds = JSON.parse(localStorage.getItem('industrac_deleted_equipments') || '[]');
+      } catch (e) {}
+
+      // Filtrar equipos eliminados localmente
+      const filteredServerEquipments = (serverEquipments || []).filter(se => 
+        se && 
+        !deletedIds.includes(se.id) && 
+        !(se.apiCode && deletedIds.includes(se.apiCode))
+      );
+
+      // Usar equipos existentes en memoria / caché local que no estén marcados como eliminados
       const eqMap = new Map();
       (this.equipments || []).forEach(e => {
+        if (!e) return;
         const key = e.id || e.apiCode;
-        if (key) eqMap.set(key, e);
-      });
-      (serverEquipments || []).forEach(se => {
-        const key = se.id || se.apiCode;
-        if (key) {
-          const existing = eqMap.get(key) || {};
-          eqMap.set(key, { ...existing, ...se });
+        if (key && !deletedIds.includes(e.id) && !(e.apiCode && deletedIds.includes(e.apiCode))) {
+          eqMap.set(key, e);
         }
       });
 
-      const mergedEquipments = Array.from(eqMap.values());
+      // Fusión inteligente: si hay cambios locales más recientes, conservarlos
+      filteredServerEquipments.forEach(se => {
+        if (!se) return;
+        const key = se.id || se.apiCode;
+        if (key) {
+          const existing = eqMap.get(key);
+          if (existing) {
+            const existingTime = new Date(existing.updatedAt || 0).getTime();
+            const serverTime = new Date(se.updatedAt || 0).getTime();
+            if (existingTime > serverTime) {
+              eqMap.set(key, { ...se, ...existing });
+            } else {
+              eqMap.set(key, { ...existing, ...se });
+            }
+          } else {
+            eqMap.set(key, se);
+          }
+        }
+      });
 
-      // Sincronizar en segundo plano al servidor los equipos que falten
-      const missingOnServer = mergedEquipments.filter(e => !serverEquipments.some(se => se.id === e.id || (se.apiCode && se.apiCode === e.apiCode)));
-      if (missingOnServer.length > 0) {
-        missingOnServer.forEach(me => {
-          fetch('/api/equipments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(me)
-          }).catch(() => {});
-        });
-      }
-
-      this.equipments = mergedEquipments;
+      this.equipments = Array.from(eqMap.values());
       this.persistLocalCatalogCache();
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
@@ -2822,11 +2845,22 @@ class IndustracApp {
     this.populateModalClientSelect();
 
     if (equipmentId) {
-      const eq = this.equipments.find(e => e.id === equipmentId);
+      const eq = this.equipments.find(e => e.id === equipmentId || (e.apiCode && e.apiCode === equipmentId));
       if (eq) {
         document.getElementById('modal-equipment-title').textContent = `Editar Compresor: ${eq.model}`;
         document.getElementById('modal-eq-id').value = eq.id;
-        document.getElementById('modal-eq-client-select').value = eq.clientId || '';
+
+        // Selección robusta de cliente: por clientId o por coincidencia de nombre
+        let selectedClientId = eq.clientId || '';
+        if (!selectedClientId || !this.clients.some(c => c.id === selectedClientId)) {
+          const matchedClient = this.clients.find(c => 
+            c.id === eq.clientId || 
+            (eq.client && c.name && c.name.trim().toLowerCase() === eq.client.trim().toLowerCase())
+          );
+          if (matchedClient) selectedClientId = matchedClient.id;
+        }
+        document.getElementById('modal-eq-client-select').value = selectedClientId;
+
         document.getElementById('modal-eq-api-code').value = eq.apiCode || eq.serialNumber || '';
         document.getElementById('modal-eq-manufacturer').value = eq.manufacturer || 'Atlas Copco';
         document.getElementById('modal-eq-model').value = eq.model || '';
@@ -2887,7 +2921,7 @@ class IndustracApp {
     const eqId = id || `eq-${Date.now()}`;
     const payload = {
       id: eqId,
-      clientId,
+      clientId: clientId || (clientObj ? clientObj.id : ''),
       client: clientObj ? clientObj.name : '',
       apiCode: apiVal,
       manufacturer: document.getElementById('modal-eq-manufacturer').value.trim() || 'Atlas Copco',
@@ -2908,7 +2942,11 @@ class IndustracApp {
     };
 
     // 1. Guardado inmediato en memoria y localStorage (Inmune a recarga de página)
-    const existingIdx = this.equipments.findIndex(eq => eq.id === eqId || (eq.apiCode && eq.apiCode.toLowerCase() === apiVal.toLowerCase()));
+    const existingIdx = this.equipments.findIndex(eq => 
+      (id && eq.id === id) || 
+      eq.id === eqId || 
+      (eq.apiCode && eq.apiCode.toLowerCase() === apiVal.toLowerCase())
+    );
     if (existingIdx !== -1) {
       this.equipments[existingIdx] = { ...this.equipments[existingIdx], ...payload };
     } else {
@@ -2921,13 +2959,12 @@ class IndustracApp {
     this.updateCatalogBadges();
 
     this.closeEquipmentModal();
-    this.showToast(`Compresor "${payload.model}" guardado exitosamente.`, 'success');
 
     // 2. Persistir en el servidor
     try {
       let res;
       if (id) {
-        res = await fetch(`/api/equipments/${id}`, {
+        res = await fetch(`/api/equipments/${encodeURIComponent(id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -2940,22 +2977,31 @@ class IndustracApp {
         });
       }
 
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Error del servidor (${res.status})`);
+      }
+
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data) {
-        if (data.id && data.id !== eqId) {
-          const idx = this.equipments.findIndex(eq => eq.id === eqId);
-          if (idx !== -1) this.equipments[idx].id = data.id;
+      if (data && data.id) {
+        const idx = this.equipments.findIndex(eq => eq.id === eqId || eq.id === id);
+        if (idx !== -1) {
+          this.equipments[idx] = { ...this.equipments[idx], ...data };
           this.persistLocalCatalogCache();
         }
       }
+      this.showToast(`Compresor "${payload.model}" guardado exitosamente.`, 'success');
+      this.renderEquipmentsCatalog();
+      this.syncReportEquipmentSelects();
     } catch (err) {
       console.warn('Aviso: guardado local activo para compresor:', err);
+      this.showToast(`Guardado localmente: ${err.message}`, 'warning');
     }
   }
 
   async toggleEquipmentStatus(equipmentId) {
     try {
-      const res = await fetch(`/api/equipments/${equipmentId}/status`, {
+      const res = await fetch(`/api/equipments/${encodeURIComponent(equipmentId)}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -3024,7 +3070,7 @@ class IndustracApp {
   }
 
   async deleteEquipment(equipmentId) {
-    const eq = this.equipments.find(e => e.id === equipmentId);
+    const eq = this.equipments.find(e => e.id === equipmentId || (e.apiCode && e.apiCode === equipmentId));
     const eqName = eq ? `${eq.model || 'Equipo'} (${eq.apiCode || eq.serialNumber || 'S/N'})` : 'este equipo';
 
     const confirmed = await this.showConfirmModal({
@@ -3038,16 +3084,32 @@ class IndustracApp {
 
     if (!confirmed) return;
 
+    const targetEqId = eq ? eq.id : equipmentId;
+    const targetApiCode = eq ? (eq.apiCode || eq.serialNumber) : equipmentId;
+
+    // Registrar en lista de IDs eliminados para evitar resurrección automática por caché
+    try {
+      const deletedIds = JSON.parse(localStorage.getItem('industrac_deleted_equipments') || '[]');
+      if (targetEqId && !deletedIds.includes(targetEqId)) deletedIds.push(targetEqId);
+      if (targetApiCode && !deletedIds.includes(targetApiCode)) deletedIds.push(targetApiCode);
+      localStorage.setItem('industrac_deleted_equipments', JSON.stringify(deletedIds.slice(-100)));
+    } catch (e) {}
+
     // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
-    this.equipments = this.equipments.filter(e => e.id !== equipmentId && e.apiCode !== equipmentId);
+    this.equipments = this.equipments.filter(e => 
+      e.id !== targetEqId && 
+      e.id !== equipmentId && 
+      (!targetApiCode || (e.apiCode !== targetApiCode && e.serialNumber !== targetApiCode))
+    );
     this.persistLocalCatalogCache();
     this.recalculateClientCounts();
     this.renderEquipmentsCatalog();
     this.renderClientsList();
     this.updateCatalogBadges();
+    this.syncReportEquipmentSelects();
 
     try {
-      const res = await fetch(`/api/equipments/${equipmentId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/equipments/${encodeURIComponent(targetEqId)}`, { method: 'DELETE' });
       if (res.ok) {
         this.showToast('Equipo eliminado del catálogo.', 'success');
         await this.loadEquipments();
@@ -3126,6 +3188,16 @@ class IndustracApp {
 
     if (!confirmed) return;
 
+    // Registrar en lista de clientes eliminados para evitar resurrección automática por caché
+    try {
+      const deletedClients = JSON.parse(localStorage.getItem('industrac_deleted_clients') || '[]');
+      if (clientId && !deletedClients.includes(clientId)) deletedClients.push(clientId);
+      if (client.name && !deletedClients.includes(client.name.trim().toLowerCase())) {
+        deletedClients.push(client.name.trim().toLowerCase());
+      }
+      localStorage.setItem('industrac_deleted_clients', JSON.stringify(deletedClients.slice(-100)));
+    } catch (e) {}
+
     // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
     const clientNameLower = (client.name || '').toLowerCase().trim();
     this.clients = this.clients.filter(c => c.id !== clientId);
@@ -3143,7 +3215,7 @@ class IndustracApp {
     }
 
     try {
-      const res = await fetch(`/api/clients/${clientId}?removeEquipments=true`, { method: 'DELETE' });
+      const res = await fetch(`/api/clients/${encodeURIComponent(clientId)}?removeEquipments=true`, { method: 'DELETE' });
       if (res.ok) {
         this.showToast(`Cliente "${client.name}" eliminado exitosamente.`, 'success');
         await this.loadClients();

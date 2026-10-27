@@ -25,5 +25,45 @@
     "notes": "Cliente registrado en catálogo INDUSTRAC.",
     "isDemo": false,
     "createdAt": "2026-10-27T10:00:00.000Z"
+  },
+  {
+    "id": "cli-1793121825312",
+    "name": "CLIENTE PRUEBA CASO 2",
+    "address": "",
+    "contact": "",
+    "notes": "",
+    "isDemo": false
+  },
+  {
+    "id": "cli-1793121830845",
+    "name": "CLIENTE PRUEBA CASO 3",
+    "address": "",
+    "contact": "",
+    "notes": "",
+    "isDemo": false
+  },
+  {
+    "id": "cli-1793121835190",
+    "name": "CLIENTE PRUEBA CASO 4",
+    "address": "",
+    "contact": "",
+    "notes": "",
+    "isDemo": false
+  },
+  {
+    "id": "cli-1793121839342",
+    "name": "CLIENTE PRUEBA CASO 5",
+    "address": "",
+    "contact": "",
+    "notes": "",
+    "isDemo": false
+  },
+  {
+    "id": "cli-1793121844347",
+    "name": "CLIENTE PRUEBA CASO 6",
+    "address": "",
+    "contact": "",
+    "notes": "",
+    "isDemo": false
   }
 ]
