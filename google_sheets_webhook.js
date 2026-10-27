@@ -1,34 +1,69 @@
 /**
  * ============================================================================
  * SCRIPT PARA GOOGLE SHEETS & GOOGLE DRIVE — INDUSTRAC S.A.C.
- * Sistema Inteligente de Reportes Técnicos
+ * Sistema Inteligente de Reportes Técnicos & Base de Datos Cloud en Sheets
  * Carpeta en Google Drive: PDF_REPORTES2027
  * ============================================================================
  * 
- * INSTRUCCIONES DE INSTALACIÓN PASO A PASO (EN 2 MINUTOS):
- * 1. Abre tu hoja de Google Sheets (una hoja nueva o la existente para reportes).
+ * INSTRUCCIONES DE ACTUALIZACIÓN / INSTALACIÓN PASO A PASO (EN 2 MINUTOS):
+ * 1. Abre tu hoja de Google Sheets ("REPORTES INDUSTRAC 2027").
  * 2. En el menú superior, haz clic en: Extensiones > Apps Script.
- * 3. Borra todo el código que aparezca y pega TODO este archivo completo.
- * 4. Haz clic en el icono "Guardar" (disco).
- * 5. Haz clic en el botón azul superior "Implementar" > "Nueva implementación".
- *    (Si ya tenías una implementada antes, ve a "Implementar" > "Administrar implementaciones" 
- *     > Icono de lápiz > En Versión elige "Nueva versión").
- * 6. En el engranaje (tipo rueda), selecciona "Aplicación web".
- * 7. Configura exactamente los siguientes campos:
- *    - Descripción: INDUSTRAC Sheets & Drive Webhook 2027
+ * 3. Selecciona todo el código existente (Ctrl+A), bórralo y pega TODO este archivo completo.
+ * 4. Haz clic en el icono "Guardar" (icono de disquete).
+ * 5. Haz clic en el botón azul superior "Implementar" > "Administrar implementaciones".
+ * 6. Haz clic en el icono del lápiz (Editar) junto a tu implementación activa.
+ * 7. En el selector "Versión", elige "Nueva versión" (New version).
+ * 8. Asegúrate de que:
  *    - Ejecutar como: "Yo" (tu cuenta de Google)
- *    - Quién tiene acceso: "Cualquier usuario" (Anyone)   <--- OBLIGATORIO
- * 8. Haz clic en "Implementar" y autoriza los permisos de Google.
- *    (Google te pedirá autorizar acceso a Google Sheets y Google Drive).
- * 9. Copia la URL de la aplicación web generada (termina en /exec).
- * 10. En el sistema INDUSTRAC, abre el botón "Google Sheets > Configurar Conexión"
- *     y pega la URL copiada.
+ *    - Quién tiene acceso: "Cualquier usuario" (Anyone)
+ * 9. Haz clic en "Implementar".
  * 
- * NOTA AUTOMÁTICA DE GOOGLE DRIVE:
- * La carpeta "PDF_REPORTES2027" se creará AUTOMÁTICAMENTE en tu Google Drive la primera vez
- * que se genere un reporte. Si ya creaste manualmente una carpeta llamada "PDF_REPORTES2027",
- * el script la detectará por el nombre y guardará allí directamente los archivos PDF.
+ * ¡Listo! Tu Google Sheets ahora funciona como Base de Datos Cloud bidireccional
+ * para Clientes, Catálogo de Compresores y Reportes Técnicos de INDUSTRAC.
  */
+
+function doGet(e) {
+  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Obtener lista de clientes como JSON
+  if (action === 'get_clients') {
+    return responseJson({
+      status: 'success',
+      clients: parseClientsFromSheet(ss)
+    });
+  }
+
+  // 2. Obtener catálogo de compresores como JSON
+  if (action === 'get_equipments') {
+    return responseJson({
+      status: 'success',
+      equipments: parseEquipmentsFromSheet(ss)
+    });
+  }
+
+  // 3. Obtener toda la base de datos cloud (Clientes + Equipos) en una sola consulta rápida
+  if (action === 'get_all_data') {
+    return responseJson({
+      status: 'success',
+      clients: parseClientsFromSheet(ss),
+      equipments: parseEquipmentsFromSheet(ss),
+      sheetName: ss.getName(),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // 4. Test de conexión GET
+  if (action === 'test_connection') {
+    return responseJson({
+      status: 'success',
+      message: '¡Conexión bidireccional activa con Google Sheets DB!',
+      sheetName: ss.getName()
+    });
+  }
+
+  return ContentService.createTextOutput("INDUSTRAC Google Sheets & Drive Webhook ACTIVO y funcionando como Base de Datos Cloud.");
+}
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
@@ -52,7 +87,23 @@ function doPost(e) {
       });
     }
 
-    // 2. SUBIR ARCHIVO PDF DIRECTAMENTE A GOOGLE DRIVE (Carpeta: PDF_REPORTES2027)
+    // 2. LECTURAS BIDIRECCIONALES DESDE POST
+    if (action === 'get_clients') {
+      return responseJson({ status: 'success', clients: parseClientsFromSheet(ss) });
+    }
+    if (action === 'get_equipments') {
+      return responseJson({ status: 'success', equipments: parseEquipmentsFromSheet(ss) });
+    }
+    if (action === 'get_all_data') {
+      return responseJson({
+        status: 'success',
+        clients: parseClientsFromSheet(ss),
+        equipments: parseEquipmentsFromSheet(ss),
+        sheetName: ss.getName()
+      });
+    }
+
+    // 3. SUBIR ARCHIVO PDF DIRECTAMENTE A GOOGLE DRIVE (Carpeta: PDF_REPORTES2027)
     if (action === 'upload_pdf_drive') {
       var folderName = data.folderName || 'PDF_REPORTES2027';
       var cleanBase64 = String(data.pdfBase64 || '').trim();
@@ -93,7 +144,7 @@ function doPost(e) {
           if (repSheet) {
             var rowIdx = findRowByValue(repSheet, 1, data.reportNumber);
             if (rowIdx > 1) {
-              // Columna 31 = 'Enlace PDF'
+              // Columna 31 = 'Enlace PDF (Google Drive)'
               repSheet.getRange(rowIdx, 31).setValue(driveDownloadUrl);
             }
           }
@@ -111,7 +162,7 @@ function doPost(e) {
       });
     }
 
-    // 3. SINCRONIZAR REPORTE TÉCNICO A GOOGLE SHEETS
+    // 4. SINCRONIZAR O CREAR REPORTE TÉCNICO A GOOGLE SHEETS
     if (action === 'sync_report') {
       var sheet = getOrCreateSheet(ss, 'Reportes Técnicos', [
         'N° Reporte',
@@ -149,21 +200,11 @@ function doPost(e) {
       ]);
 
       var report = data.report || {};
-      var reportNumber = report.reportNumber || 'REP-PENDIENTE';
-
-      // Preparar repuestos como texto legible
-      var partsSummary = '';
-      if (report.partsReplaced && Array.isArray(report.partsReplaced)) {
-        partsSummary = report.partsReplaced.map(function(p) {
-          return (p.qty || 1) + 'x ' + (p.description || p.code || 'Repuesto');
-        }).join('; ');
-      }
-
-      var pdfLink = report.pdfDriveDownloadUrl || report.pdfDriveUrl || report.pdfUrl || (report.id ? 'http://localhost:3000/api/reports/' + report.id + '/pdf' : '');
+      var reportNumber = report.reportNumber || 'REP-SIN-NUM';
 
       var rowValues = [
         reportNumber,
-        report.date || Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd'),
+        report.date || '',
         report.status || 'Finalizado',
         report.client || '',
         report.address || '',
@@ -173,48 +214,223 @@ function doPost(e) {
         report.technician || '',
         report.serviceType || 'Mantenimiento',
         report.maintenanceType || '',
-        report.hourMeter || 0,
+        report.hourMeter || '0',
         report.oilType || '',
-        report.oilLevel || 'Alto',
-        (report.regulations && report.regulations.loadPressure) || '',
-        (report.regulations && report.regulations.unloadPressure) || '',
-        (report.technicalParameters && report.technicalParameters.elem1Temp) || '',
-        (report.technicalParameters && report.technicalParameters.oilTemp) || '',
-        (report.electrical && report.electrical.u1_u2) || '',
-        (report.electrical && report.electrical.u2_u3) || '',
-        (report.electrical && report.electrical.u1_u3) || '',
-        (report.electrical && report.electrical.i_l1) || '',
-        (report.electrical && report.electrical.i_l2) || '',
-        (report.electrical && report.electrical.i_l3) || '',
-        (report.electrical && report.electrical.f1) || '',
-        partsSummary,
+        report.oilLevel || '',
+        report.regulations ? (report.regulations.loadPressure || '') : '',
+        report.regulations ? (report.regulations.unloadPressure || '') : '',
+        report.technicalParameters ? (report.technicalParameters.elem1Temp || '') : '',
+        report.technicalParameters ? (report.technicalParameters.oilTemp || '') : '',
+        report.electrical ? (report.electrical.u1_u2 || '') : '',
+        report.electrical ? (report.electrical.u2_u3 || '') : '',
+        report.electrical ? (report.electrical.u1_u3 || '') : '',
+        report.electrical ? (report.electrical.i_l1 || '') : '',
+        report.electrical ? (report.electrical.i_l2 || '') : '',
+        report.electrical ? (report.electrical.i_l3 || '') : '',
+        report.electrical ? (report.electrical.f1 || '') : '',
+        formatPartsSummary(report.parts),
         report.observations || '',
         report.techSignature ? 'FIRMADO' : 'PENDIENTE',
         report.clientSignature ? 'FIRMADO' : 'PENDIENTE',
-        (report.photos && report.photos.length) ? report.photos.length + ' foto(s)' : '0 fotos',
-        pdfLink,
+        (report.photos ? report.photos.length : 0) + ' fotos',
+        report.pdfDriveDownloadUrl || report.pdfDriveUrl || '',
         Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd HH:mm:ss')
       ];
 
-      // Buscar si ya existe la fila para actualizarla, o agregarla
-      var idColIndex = 1; // Columna A = N° Reporte
-      var existingRowIndex = findRowByValue(sheet, idColIndex, reportNumber);
-
-      if (existingRowIndex > 1) {
-        sheet.getRange(existingRowIndex, 1, 1, rowValues.length).setValues([rowValues]);
+      // Si el reporte ya existe (por N° de reporte), actualizar la fila; si no, agregar una nueva fila
+      var existingRow = findRowByValue(sheet, 1, reportNumber);
+      if (existingRow > 1) {
+        sheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
       } else {
         sheet.appendRow(rowValues);
       }
 
       return responseJson({
         status: 'success',
-        message: 'Reporte ' + reportNumber + ' sincronizado exitosamente en Google Sheets.',
-        row: existingRowIndex > 1 ? existingRowIndex : sheet.getLastRow(),
-        pdfLink: pdfLink
+        message: 'Reporte ' + reportNumber + ' registrado en Google Sheets.',
+        row: existingRow > 1 ? existingRow : sheet.getLastRow()
       });
     }
 
-    // 4. SINCRONIZAR PARQUE DE COMPRESORES (CATÁLOGO)
+    // 5. ELIMINAR REPORTE DE GOOGLE SHEETS
+    if (action === 'delete_report') {
+      var repSheet = ss.getSheetByName('Reportes Técnicos');
+      if (repSheet) {
+        var repNum = data.reportNumber || data.reportId;
+        if (repNum) {
+          var row = findRowByValue(repSheet, 1, repNum);
+          if (row > 1) {
+            repSheet.deleteRow(row);
+            return responseJson({ status: 'success', message: 'Reporte ' + repNum + ' eliminado de Google Sheets.' });
+          }
+        }
+      }
+      return responseJson({ status: 'success', message: 'Reporte no encontrado o ya eliminado.' });
+    }
+
+    // 6. GUARDAR / EDITAR CLIENTE INDIVIDUAL
+    if (action === 'save_client') {
+      var clientSheet = getOrCreateSheet(ss, 'Clientes', [
+        'ID Cliente',
+        'Nombre Empresa',
+        'Dirección / Planta',
+        'Contacto',
+        'Notas',
+        'Última Actualización'
+      ]);
+
+      var client = data.client || {};
+      if (!client.name) {
+        return responseJson({ status: 'error', message: 'Nombre de cliente requerido.' });
+      }
+
+      var clientId = client.id || ('cli-' + new Date().getTime());
+      var clientRow = [
+        clientId,
+        client.name || '',
+        client.address || '',
+        client.contact || '',
+        client.notes || '',
+        Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd HH:mm:ss')
+      ];
+
+      var existingClientRow = findRowByValue(clientSheet, 1, clientId);
+      if (existingClientRow === -1 && client.name) {
+        existingClientRow = findRowByValue(clientSheet, 2, client.name);
+      }
+
+      if (existingClientRow > 1) {
+        clientSheet.getRange(existingClientRow, 1, 1, clientRow.length).setValues([clientRow]);
+      } else {
+        clientSheet.appendRow(clientRow);
+      }
+
+      return responseJson({
+        status: 'success',
+        message: 'Cliente "' + client.name + '" guardado exitosamente en Google Sheets.',
+        client: client
+      });
+    }
+
+    // 7. ELIMINAR CLIENTE DE GOOGLE SHEETS
+    if (action === 'delete_client') {
+      var clientSheet = ss.getSheetByName('Clientes');
+      if (clientSheet && data.clientId) {
+        var row = findRowByValue(clientSheet, 1, data.clientId);
+        if (row > 1) {
+          clientSheet.deleteRow(row);
+          return responseJson({ status: 'success', message: 'Cliente eliminado de Google Sheets.' });
+        }
+      }
+      return responseJson({ status: 'success', message: 'Cliente no encontrado o ya eliminado.' });
+    }
+
+    // 8. SINCRONIZAR LISTA COMPLETA DE CLIENTES
+    if (action === 'sync_clients') {
+      var clientSheet = getOrCreateSheet(ss, 'Clientes', [
+        'ID Cliente',
+        'Nombre Empresa',
+        'Dirección / Planta',
+        'Contacto',
+        'Notas',
+        'Última Actualización'
+      ]);
+
+      var clients = data.clients || [];
+      var lastClientRow = clientSheet.getLastRow();
+      if (lastClientRow > 1) {
+        clientSheet.getRange(2, 1, lastClientRow - 1, clientSheet.getLastColumn()).clearContent();
+      }
+
+      if (clients.length > 0) {
+        var clientRows = clients.map(function(c) {
+          return [
+            c.id || '',
+            c.name || '',
+            c.address || '',
+            c.contact || '',
+            c.notes || '',
+            Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd HH:mm:ss')
+          ];
+        });
+        clientSheet.getRange(2, 1, clientRows.length, clientRows[0].length).setValues(clientRows);
+      }
+
+      return responseJson({
+        status: 'success',
+        message: clients.length + ' clientes sincronizados en Google Sheets.'
+      });
+    }
+
+    // 9. GUARDAR / EDITAR COMPRESOR INDIVIDUAL
+    if (action === 'save_equipment') {
+      var eqSheet = getOrCreateSheet(ss, 'Parque de Compresores', [
+        'ID Interno',
+        'API / ID Máquina',
+        'Cliente',
+        'Modelo',
+        'Fabricante',
+        'Horómetro (hrs)',
+        'Presión Trabajo',
+        'Caudal (cfm)',
+        'Tipo Aceite',
+        'Ubicación',
+        'Estado',
+        'Última Actualización'
+      ]);
+
+      var eq = data.equipment || {};
+      var eqId = eq.id || ('eq-' + new Date().getTime());
+      var eqRow = [
+        eqId,
+        eq.apiCode || eq.serialNumber || '',
+        eq.client || '',
+        eq.model || '',
+        eq.manufacturer || 'Atlas Copco',
+        eq.hourMeter || 0,
+        eq.pressure || '',
+        eq.airflow || '',
+        eq.oilType || 'Ndurance (Presentación 5 L)',
+        eq.location || '',
+        eq.status || 'Activo',
+        Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd HH:mm:ss')
+      ];
+
+      var existingEqRow = findRowByValue(eqSheet, 1, eqId);
+      if (existingEqRow === -1 && eq.apiCode) {
+        existingEqRow = findRowByValue(eqSheet, 2, eq.apiCode);
+      }
+
+      if (existingEqRow > 1) {
+        eqSheet.getRange(existingEqRow, 1, 1, eqRow.length).setValues([eqRow]);
+      } else {
+        eqSheet.appendRow(eqRow);
+      }
+
+      return responseJson({
+        status: 'success',
+        message: 'Compresor "' + (eq.model || eq.apiCode) + '" guardado exitosamente en Google Sheets.',
+        equipment: eq
+      });
+    }
+
+    // 10. ELIMINAR COMPRESOR DE GOOGLE SHEETS
+    if (action === 'delete_equipment') {
+      var eqSheet = ss.getSheetByName('Parque de Compresores');
+      if (eqSheet && data.equipmentId) {
+        var row = findRowByValue(eqSheet, 1, data.equipmentId);
+        if (row === -1 && data.apiCode) {
+          row = findRowByValue(eqSheet, 2, data.apiCode);
+        }
+        if (row > 1) {
+          eqSheet.deleteRow(row);
+          return responseJson({ status: 'success', message: 'Compresor eliminado de Google Sheets.' });
+        }
+      }
+      return responseJson({ status: 'success', message: 'Compresor no encontrado o ya eliminado.' });
+    }
+
+    // 11. SINCRONIZAR PARQUE DE COMPRESORES COMPLETO
     if (action === 'sync_equipments') {
       var eqSheet = getOrCreateSheet(ss, 'Parque de Compresores', [
         'ID Interno',
@@ -263,43 +479,6 @@ function doPost(e) {
       });
     }
 
-    // 5. SINCRONIZAR CLIENTES
-    if (action === 'sync_clients') {
-      var clientSheet = getOrCreateSheet(ss, 'Clientes', [
-        'ID Cliente',
-        'Nombre Empresa',
-        'Dirección / Planta',
-        'Contacto',
-        'Notas',
-        'Última Actualización'
-      ]);
-
-      var clients = data.clients || [];
-      var lastClientRow = clientSheet.getLastRow();
-      if (lastClientRow > 1) {
-        clientSheet.getRange(2, 1, lastClientRow - 1, clientSheet.getLastColumn()).clearContent();
-      }
-
-      if (clients.length > 0) {
-        var clientRows = clients.map(function(c) {
-          return [
-            c.id || '',
-            c.name || '',
-            c.address || '',
-            c.contact || '',
-            c.notes || '',
-            Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd HH:mm:ss')
-          ];
-        });
-        clientSheet.getRange(2, 1, clientRows.length, clientRows[0].length).setValues(clientRows);
-      }
-
-      return responseJson({
-        status: 'success',
-        message: clients.length + ' clientes sincronizados en Google Sheets.'
-      });
-    }
-
     return responseJson({ status: 'error', message: 'Acción no reconocida: ' + action });
 
   } catch (error) {
@@ -309,11 +488,67 @@ function doPost(e) {
   }
 }
 
-function doGet(e) {
-  return ContentService.createTextOutput("INDUSTRAC Google Sheets & Drive Webhook ACTIVO y funcionando.");
+// Helpers para parseo de datos de hojas
+function parseClientsFromSheet(ss) {
+  var clientSheet = ss.getSheetByName('Clientes');
+  if (!clientSheet || clientSheet.getLastRow() < 2) return [];
+
+  var data = clientSheet.getDataRange().getValues();
+  var clients = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var id = String(row[0] || '').trim();
+    var name = String(row[1] || '').trim();
+    if (id || name) {
+      clients.push({
+        id: id || ('cli-' + new Date().getTime() + '-' + i),
+        name: name,
+        address: String(row[2] || '').trim(),
+        contact: String(row[3] || '').trim(),
+        notes: String(row[4] || '').trim(),
+        updatedAt: String(row[5] || '')
+      });
+    }
+  }
+  return clients;
 }
 
-// Helpers
+function parseEquipmentsFromSheet(ss) {
+  var eqSheet = ss.getSheetByName('Parque de Compresores');
+  if (!eqSheet || eqSheet.getLastRow() < 2) return [];
+
+  var data = eqSheet.getDataRange().getValues();
+  var equipments = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var id = String(row[0] || '').trim();
+    var apiCode = String(row[1] || '').trim();
+    var client = String(row[2] || '').trim();
+    var model = String(row[3] || '').trim();
+
+    if (id || apiCode || model) {
+      equipments.push({
+        id: id || ('eq-' + new Date().getTime() + '-' + i),
+        apiCode: apiCode,
+        client: client,
+        model: model,
+        manufacturer: String(row[4] || 'Atlas Copco').trim(),
+        hourMeter: String(row[5] || '0').trim(),
+        hours: Number(row[5]) || 0,
+        pressure: String(row[6] || '').trim(),
+        airflow: String(row[7] || '').trim(),
+        oilType: String(row[8] || 'Ndurance (Presentación 5 L)').trim(),
+        location: String(row[9] || 'Sala de Compresores').trim(),
+        status: String(row[10] || 'Activo').trim(),
+        active: String(row[10] || 'Activo').trim().toLowerCase() !== 'inactivo',
+        updatedAt: String(row[11] || '')
+      });
+    }
+  }
+  return equipments;
+}
+
+// Helpers generales
 function getOrCreateFolder(folderName) {
   var folders = DriveApp.getFoldersByName(folderName);
   if (folders.hasNext()) {
@@ -347,6 +582,13 @@ function findRowByValue(sheet, colIndex, value) {
     }
   }
   return -1;
+}
+
+function formatPartsSummary(parts) {
+  if (!parts || !Array.isArray(parts) || parts.length === 0) return 'Sin repuestos';
+  return parts.map(function(p) {
+    return (p.code || '') + ' - ' + (p.description || '') + ' (Cant: ' + (p.quantity || 1) + ')';
+  }).join('; ');
 }
 
 function responseJson(obj) {

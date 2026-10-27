@@ -27,8 +27,27 @@ try {
   }
 } catch (e) {}
 
+// In-memory cache for fallback in read-only serverless environments (Vercel)
+const memoryStore = {};
+
 // Helpers for thread-safe JSON operations
 function readJson(filePath, defaultValue = []) {
+  // En Vercel serverless, verificar si hay datos en memoria o en /tmp
+  if (process.env.VERCEL) {
+    if (memoryStore[filePath] !== undefined) {
+      return memoryStore[filePath];
+    }
+    try {
+      const tmpPath = path.join('/tmp', path.basename(filePath));
+      if (fs.existsSync(tmpPath)) {
+        const tmpData = fs.readFileSync(tmpPath, 'utf8');
+        const parsed = JSON.parse(tmpData || '[]');
+        memoryStore[filePath] = parsed;
+        return parsed;
+      }
+    } catch (e) {}
+  }
+
   try {
     if (!fs.existsSync(filePath)) {
       try {
@@ -45,6 +64,10 @@ function readJson(filePath, defaultValue = []) {
 }
 
 function writeJson(filePath, data) {
+  if (process.env.VERCEL) {
+    memoryStore[filePath] = data;
+  }
+
   try {
     const content = JSON.stringify(data, null, 2);
     try {
@@ -57,6 +80,16 @@ function writeJson(filePath, data) {
     }
     return true;
   } catch (err) {
+    // Si el entorno es de solo lectura (como Vercel serverless / EROFS), persistir en /tmp
+    if (process.env.VERCEL) {
+      try {
+        const tmpPath = path.join('/tmp', path.basename(filePath));
+        fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+      } catch (tmpErr) {
+        console.warn(`[Storage Warning] Entorno serverless solo-lectura: ${err.message}`);
+      }
+      return true;
+    }
     console.error(`Error writing ${filePath}:`, err);
     return false;
   }
@@ -560,6 +593,7 @@ app.post('/api/clients', (req, res) => {
 
   clients.push(newClient);
   writeJson(CLIENTS_FILE, clients);
+  syncClientsToGoogleSheets();
   res.status(201).json(newClient);
 });
 
@@ -589,6 +623,7 @@ app.put('/api/clients/:id', (req, res) => {
     id: clients[idx].id
   };
   writeJson(CLIENTS_FILE, clients);
+  syncClientsToGoogleSheets();
 
   // Sync client name in associated equipments
   if (newName !== oldName) {
@@ -601,7 +636,10 @@ app.put('/api/clients/:id', (req, res) => {
         eqModified = true;
       }
     });
-    if (eqModified) writeJson(EQUIPMENTS_FILE, equipments);
+    if (eqModified) {
+      writeJson(EQUIPMENTS_FILE, equipments);
+      syncEquipmentsToGoogleSheets();
+    }
   }
 
   res.json(clients[idx]);
@@ -617,6 +655,7 @@ app.delete('/api/clients/:id', (req, res) => {
 
   clients = clients.filter(c => c.id !== req.params.id);
   writeJson(CLIENTS_FILE, clients);
+  syncClientsToGoogleSheets();
 
   // Also remove or disassociate its equipments if requested
   const removeEquipments = req.query.removeEquipments === 'true';
@@ -624,6 +663,7 @@ app.delete('/api/clients/:id', (req, res) => {
   if (removeEquipments) {
     equipments = equipments.filter(e => e.clientId !== req.params.id && e.client !== clientToDelete.name);
     writeJson(EQUIPMENTS_FILE, equipments);
+    syncEquipmentsToGoogleSheets();
   }
 
   res.json({ message: 'Cliente eliminado exitosamente.' });
@@ -765,6 +805,7 @@ app.post('/api/equipments', (req, res) => {
 
   equipments.push(newEquipment);
   writeJson(EQUIPMENTS_FILE, equipments);
+  syncEquipmentsToGoogleSheets();
   res.status(201).json(newEquipment);
 });
 
@@ -797,6 +838,7 @@ app.put('/api/equipments/:id', (req, res) => {
   };
 
   writeJson(EQUIPMENTS_FILE, equipments);
+  syncEquipmentsToGoogleSheets();
   res.json(equipments[idx]);
 });
 
@@ -828,6 +870,7 @@ app.delete('/api/equipments/:id', (req, res) => {
 
   equipments = equipments.filter(e => e.id !== req.params.id);
   writeJson(EQUIPMENTS_FILE, equipments);
+  syncEquipmentsToGoogleSheets();
   res.json({ message: 'Equipo eliminado exitosamente.' });
 });
 
@@ -2218,6 +2261,138 @@ async function deleteReportFromGoogleSheets(report) {
     return null;
   }
 }
+
+async function syncClientsToGoogleSheets() {
+  try {
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl) return null;
+    if (settings.autoSyncSheets === false) return null;
+
+    const clients = readJson(CLIENTS_FILE, []).filter(c => !c.isDemo && !(c.name && c.name.toLowerCase().includes('demo')));
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'sync_clients',
+        clients: clients
+      })
+    }).catch(e => console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar clientes:', e.message));
+  } catch (err) {
+    console.warn('[Google Sheets Sync] Error al preparar sincronización de clientes:', err.message);
+  }
+}
+
+async function syncEquipmentsToGoogleSheets() {
+  try {
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl) return null;
+    if (settings.autoSyncSheets === false) return null;
+
+    const equipments = readJson(EQUIPMENTS_FILE, []).filter(e => !e.isDemo);
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'sync_equipments',
+        equipments: equipments
+      })
+    }).catch(e => console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar equipos:', e.message));
+  } catch (err) {
+    console.warn('[Google Sheets Sync] Error al preparar sincronización de equipos:', err.message);
+  }
+}
+
+// Helper para jalar clientes y equipos actualizados desde Google Sheets (Base de Datos Cloud)
+async function pullDataFromGoogleSheets() {
+  try {
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl) return null;
+
+    console.log('[Google Sheets DB] Consultando clientes y equipos desde Google Sheets...');
+    const res = await fetch(`${webhookUrl}?action=get_all_data`, { redirect: 'follow' });
+    if (!res.ok) return null;
+
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return null;
+    }
+
+    if (data && data.status === 'success') {
+      let clientsUpdated = false;
+      let equipmentsUpdated = false;
+
+      if (Array.isArray(data.clients) && data.clients.length > 0) {
+        const currentClients = readJson(CLIENTS_FILE, []);
+        const clientMap = new Map();
+        currentClients.forEach(c => clientMap.set(c.id, c));
+        data.clients.forEach(c => {
+          if (c.id && c.name) {
+            clientMap.set(c.id, { ...(clientMap.get(c.id) || {}), ...c });
+          }
+        });
+        const mergedClients = Array.from(clientMap.values());
+        writeJson(CLIENTS_FILE, mergedClients);
+        clientsUpdated = true;
+      }
+
+      if (Array.isArray(data.equipments) && data.equipments.length > 0) {
+        const currentEquipments = readJson(EQUIPMENTS_FILE, []);
+        const eqMap = new Map();
+        currentEquipments.forEach(e => eqMap.set(e.id || e.apiCode, e));
+        data.equipments.forEach(e => {
+          const key = e.id || e.apiCode;
+          if (key && (e.model || e.client)) {
+            eqMap.set(key, { ...(eqMap.get(key) || {}), ...e });
+          }
+        });
+        const mergedEquipments = Array.from(eqMap.values());
+        writeJson(EQUIPMENTS_FILE, mergedEquipments);
+        equipmentsUpdated = true;
+      }
+
+      console.log(`[Google Sheets DB] Sincronización exitosa desde Sheets. Clientes: ${data.clients?.length || 0}, Equipos: ${data.equipments?.length || 0}`);
+      return {
+        clientsCount: data.clients?.length || 0,
+        equipmentsCount: data.equipments?.length || 0,
+        clientsUpdated,
+        equipmentsUpdated
+      };
+    }
+  } catch (err) {
+    console.warn('[Google Sheets DB] Consulta a Google Sheets omitida o no disponible:', err.message);
+  }
+  return null;
+}
+
+// Endpoint para jalar datos desde Google Sheets a petición o recuperación
+app.post('/api/settings/pull-sheets', async (req, res) => {
+  try {
+    const result = await pullDataFromGoogleSheets();
+    if (result) {
+      res.json({
+        success: true,
+        message: `Base de datos sincronizada desde Google Sheets (${result.clientsCount} clientes, ${result.equipmentsCount} equipos).`,
+        ...result
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'No se pudo obtener datos desde Google Sheets. Verifique la conexión o intente nuevamente.'
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Error al sincronizar desde Google Sheets: ' + err.message });
+  }
+});
 
 // Settings endpoints
 app.get('/api/settings', (req, res) => {

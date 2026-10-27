@@ -1757,12 +1757,15 @@
         </div>
 
         <!-- Action Buttons -->
-        <div style="display: flex; gap: 0.65rem; margin-bottom: 1.25rem;">
-          <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="window.app.testGoogleSheetsConnection()">
+        <div style="display: flex; gap: 0.65rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary" style="flex: 1; min-width: 140px;" onclick="window.app.testGoogleSheetsConnection()">
             🔌 Probar Conexión
           </button>
-          <button type="button" class="btn btn-primary" style="flex: 1; background: #198754; border-color: #198754;" onclick="window.app.syncAllToGoogleSheets()">
-            🔄 Sincronizar Todo Ahora
+          <button type="button" class="btn btn-primary" style="flex: 1; min-width: 140px; background: #198754; border-color: #198754;" onclick="window.app.syncAllToGoogleSheets()">
+            ⬆️ Enviar Todo a Sheets
+          </button>
+          <button type="button" class="btn btn-secondary" style="flex: 1; min-width: 140px; color: #0F5132; border-color: #198754;" onclick="window.app.pullFromGoogleSheets()">
+            ⬇️ Jalar Datos desde Sheets
           </button>
         </div>
 

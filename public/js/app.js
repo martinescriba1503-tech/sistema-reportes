@@ -2485,11 +2485,25 @@ class IndustracApp {
     }
 
     if (filtered.length === 0) {
+      const isSpecificClient = this.selectedClientId && this.selectedClientId !== 'all';
+      const clientObj = isSpecificClient ? this.clients.find(c => c.id === this.selectedClientId) : null;
+      const clientName = clientObj ? clientObj.name : '';
+
       tbody.innerHTML = `
         <tr>
-          <td colspan="8" style="text-align: center; padding: 2.5rem 1rem; color: #94A3B8;">
-            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔍</div>
-            No se encontraron equipos bajo los criterios seleccionados.
+          <td colspan="8" style="text-align: center; padding: 3rem 1.5rem; color: #64748B;">
+            <div style="font-size: 2rem; margin-bottom: 0.65rem;">⚙️</div>
+            <div style="font-size: 1.05rem; font-weight: 700; color: var(--color-primary-dark); margin-bottom: 0.4rem;">
+              ${isSpecificClient ? `El cliente "${clientName}" aún no tiene compresores registrados.` : 'No se encontraron equipos bajo los criterios seleccionados.'}
+            </div>
+            ${isSpecificClient ? `
+              <p style="font-size: 0.86rem; color: #64748B; max-width: 500px; margin: 0 auto 1.25rem auto;">
+                Registre el primer compresor asociado a esta empresa para gestionar sus especificaciones técnicas, horómetro e historial de servicios.
+              </p>
+              <button type="button" class="btn btn-primary" onclick="window.app.openEquipmentModalForCurrentClient()">
+                ＋ Registrar Primer Compresor
+              </button>
+            ` : ''}
           </td>
         </tr>
       `;
@@ -2993,9 +3007,26 @@ class IndustracApp {
       }
 
       this.closeClientModal();
-      this.showToast('Cliente guardado exitosamente.', 'success');
+      this.showToast(`Cliente "${payload.name}" guardado exitosamente.`, 'success');
+
+      // Limpiar filtro de búsqueda para que el nuevo cliente aparezca de inmediato en la barra lateral
+      const searchInput = document.getElementById('catalog-client-search');
+      if (searchInput) searchInput.value = '';
+      this.catalogClientSearch = '';
+
       await this.loadClients();
       await this.loadEquipments();
+      this.updateCatalogBadges();
+
+      // Seleccionar automáticamente el cliente nuevo o editado para que se refleje de inmediato en pantalla
+      const targetClientId = data?.id || id;
+      if (targetClientId) {
+        this.selectClient(targetClientId);
+        const cardEl = document.getElementById(`client-card-${targetClientId}`);
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
     } catch (err) {
       this.showToast('Error: ' + err.message, 'error');
     }
@@ -3239,6 +3270,28 @@ class IndustracApp {
       }
     } catch (err) {
       this.showToast('Error al sincronizar con Google Sheets: ' + err.message, 'error');
+    }
+  }
+
+  async pullFromGoogleSheets() {
+    this.showToast('Descargando catálogo de Clientes y Equipos desde Google Sheets...', 'info');
+    try {
+      const res = await fetch('/api/settings/pull-sheets', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        this.showToast(data.message || 'Catálogo actualizado desde Google Sheets', 'success');
+        await this.loadClients();
+        await this.loadEquipments();
+        await this.loadHorometersData();
+        const lastSyncEl = document.getElementById('sheets-last-sync-text');
+        if (lastSyncEl) {
+          lastSyncEl.textContent = `Última sincronización: ${new Date().toLocaleString()}`;
+        }
+      } else {
+        throw new Error(data.message || 'No se pudo obtener datos');
+      }
+    } catch (err) {
+      this.showToast('Aviso: ' + err.message, 'warning');
     }
   }
 
