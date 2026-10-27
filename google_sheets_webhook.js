@@ -245,9 +245,47 @@ function doPost(e) {
         sheet.appendRow(rowValues);
       }
 
+      // INTERCONEXIÓN AUTOMÁTICA CON LA HOJA 'Parque de Compresores':
+      // Actualizar automáticamente el Horómetro del equipo en la pestaña de Compresores
+      try {
+        var compSheet = ss.getSheetByName('Parque de Compresores');
+        if (compSheet && compSheet.getLastRow() > 1 && report.hourMeter) {
+          var repApi = String(report.apiCode || report.serialNumber || '').trim().toLowerCase();
+          var repModel = String(report.model || '').trim().toLowerCase();
+          var repClient = String(report.client || '').trim().toLowerCase();
+          var newHours = Number(report.hourMeter) || 0;
+          var compData = compSheet.getDataRange().getValues();
+
+          for (var cr = 1; cr < compData.length; cr++) {
+            var cId = String(compData[cr][0] || '').trim().toLowerCase();
+            var cApi = String(compData[cr][1] || '').trim().toLowerCase();
+            var cClient = String(compData[cr][2] || '').trim().toLowerCase();
+            var cModel = String(compData[cr][3] || '').trim().toLowerCase();
+
+            var matched = false;
+            if (report.equipmentId && cId === String(report.equipmentId).toLowerCase()) matched = true;
+            else if (repApi && cApi && (repApi === cApi || cApi.indexOf(repApi) !== -1 || repApi.indexOf(cApi) !== -1)) matched = true;
+            else if (repModel && cModel && (repModel === cModel || repModel.indexOf(cModel) !== -1 || cModel.indexOf(repModel) !== -1) && repClient && cClient.indexOf(repClient) !== -1) matched = true;
+
+            if (matched) {
+              var oldHoursInSheet = Number(compData[cr][5]) || 0;
+              if (newHours >= oldHoursInSheet || oldHoursInSheet === 0) {
+                // Columna 6 = 'Horómetro (hrs)'
+                compSheet.getRange(cr + 1, 6).setValue(newHours);
+                // Columna 12 = 'Última Actualización'
+                compSheet.getRange(cr + 1, 12).setValue(Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd HH:mm:ss'));
+              }
+              break;
+            }
+          }
+        }
+      } catch (eHoroComp) {
+        // No interrumpir respuesta de guardado si ocurre algún detalle en Google Sheets
+      }
+
       return responseJson({
         status: 'success',
-        message: 'Reporte ' + reportNumber + ' registrado en Google Sheets.',
+        message: 'Reporte ' + reportNumber + ' registrado y horómetro de compresor actualizado en Google Sheets.',
         row: existingRow > 1 ? existingRow : sheet.getLastRow()
       });
     }

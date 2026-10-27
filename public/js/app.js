@@ -320,13 +320,17 @@ class IndustracApp {
       this.triggerAutoSave();
     });
 
-    // Horómetro changed -> Auto-detect hours for standard observations
+    // Horómetro changed -> Auto-detect hours for standard observations & keep state synced
     const hourmeterInput = document.getElementById('field-hourmeter');
     hourmeterInput?.addEventListener('input', (e) => {
+      this.reportData.hourMeter = e.target.value;
       this.handleHoursAutocomplete(e.target.value);
+      this.triggerAutoSave();
     });
     hourmeterInput?.addEventListener('change', (e) => {
+      this.reportData.hourMeter = e.target.value;
       this.handleHoursAutocomplete(e.target.value);
+      this.triggerAutoSave();
     });
 
     // Date input: click opens native picker, change syncs state
@@ -931,14 +935,31 @@ class IndustracApp {
     this.reportData.oilType = (rawOil === 'NDURANCE') ? 'Ndurance (Presentación 5 L)' : rawOil;
     this.reportData.customOil = eq.customOil || '';
 
-    if (eq.hourMeter && eq.hourMeter !== 'Pendiente de completar' && eq.hourMeter !== '0') {
-      this.reportData.hourMeter = eq.hourMeter;
+    const eqHours = (eq.hourMeter && eq.hourMeter !== 'Pendiente de completar' && eq.hourMeter !== '0')
+      ? eq.hourMeter
+      : (eq.hours && eq.hours > 0 ? String(eq.hours) : '');
+    if (eqHours) {
+      this.reportData.hourMeter = eqHours;
     }
 
     if (eq.hasDryer) {
       this.reportData.hasDryer = true;
       this.reportData.dryer.model = eq.dryerModel || '';
       this.reportData.dryer.serialNumber = eq.dryerSerial || '';
+    }
+
+    // Auto-alinear el tipo de mantenimiento con el próximo plan recomendado del equipo si existe
+    const recPlan = eq.nextMaintenance?.plan || eq.nextPlan;
+    if (recPlan) {
+      const maintSelect = document.getElementById('maintenance-type-select');
+      if (maintSelect) {
+        const optionExists = Array.from(maintSelect.options).some(o => o.value === recPlan);
+        if (optionExists) {
+          maintSelect.value = recPlan;
+          this.reportData.maintenanceType = recPlan;
+          this.renderAutoLoadedPartsBox(recPlan);
+        }
+      }
     }
 
     this.syncStateToForm();
@@ -956,6 +977,10 @@ class IndustracApp {
     if (airField) airField.value = this.reportData.airflow;
     const idField = document.getElementById('field-equipment-id');
     if (idField) idField.value = eq.id;
+    const hourmeterField = document.getElementById('field-hourmeter');
+    if (hourmeterField && this.reportData.hourMeter) {
+      hourmeterField.value = this.reportData.hourMeter;
+    }
 
     const tag = document.getElementById('equipment-selected-tag');
     if (tag) {
@@ -2993,6 +3018,7 @@ class IndustracApp {
       this.showToast(`Compresor "${payload.model}" guardado exitosamente.`, 'success');
       this.renderEquipmentsCatalog();
       this.syncReportEquipmentSelects();
+      await this.loadHorometersData();
     } catch (err) {
       console.warn('Aviso: guardado local activo para compresor:', err);
       this.showToast(`Guardado localmente: ${err.message}`, 'warning');
@@ -4640,21 +4666,30 @@ class IndustracApp {
       if (tbody) {
         tbody.innerHTML = timeline.map(entry => {
           let badgeHtml = '';
-          if (entry.type === 'maintenance') {
+          const eType = (entry.type || entry.serviceType || '').toLowerCase();
+          if (eType === 'maintenance' || eType === 'mantenimiento' || entry.plan) {
             badgeHtml = '<span class="timeline-badge badge-maint">🔧 Mantenimiento</span>';
-          } else if (entry.type === 'reading') {
+          } else if (eType === 'reading' || eType === 'lectura') {
             badgeHtml = '<span class="timeline-badge badge-read">⏱️ Lectura</span>';
           } else {
             badgeHtml = '<span class="timeline-badge badge-init">⚙️ Config / Inicial</span>';
           }
 
+          const entryHoro = (entry.hourMeter !== undefined && entry.hourMeter !== null && entry.hourMeter !== '')
+            ? Number(entry.hourMeter)
+            : (entry.hours ?? 0);
+
+          const repBadge = entry.reportNumber
+            ? `<span class="eq-id-badge" style="font-size: 0.76rem; cursor: pointer;" title="Abrir y editar reporte ${entry.reportNumber}" onclick="window.app.editReportByNumber('${entry.reportNumber}')">${entry.reportNumber} ↗</span>`
+            : '-';
+
           return `
             <tr>
               <td><strong>${this.formatDateSpanish(entry.date)}</strong></td>
-              <td><span class="timeline-reading-highlight">${(entry.hours ?? 0).toLocaleString()} hrs</span></td>
+              <td><span class="timeline-reading-highlight">${entryHoro.toLocaleString()} hrs</span></td>
               <td>${badgeHtml}</td>
               <td><strong>${entry.plan || '-'}</strong></td>
-              <td>${entry.reportNumber ? `<span class="eq-id-badge" style="font-size: 0.76rem;">${entry.reportNumber}</span>` : '-'}</td>
+              <td>${repBadge}</td>
               <td>${entry.technician || entry.registeredBy || '-'}</td>
               <td style="color: #475569; font-size: 0.8rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis;">
                 ${entry.notes || '-'}
@@ -4666,6 +4701,16 @@ class IndustracApp {
     } catch (err) {
       console.error('Error cargando historial de horómetro:', err);
       if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="color: red; text-align: center;">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  editReportByNumber(reportNumber) {
+    const rep = this.reports.find(r => r.reportNumber === reportNumber);
+    if (rep) {
+      this.closeHorometerHistoryModal();
+      this.editReport(rep.id);
+    } else {
+      this.showToast(`Reporte ${reportNumber} no encontrado en el listado activo.`, 'warning');
     }
   }
 

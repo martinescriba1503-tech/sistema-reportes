@@ -860,14 +860,33 @@ app.put('/api/equipments/:id', async (req, res) => {
   const updatedStatus = req.body.status || equipments[idx].status || 'Activo';
   const updatedActive = req.body.active !== undefined ? req.body.active : updatedStatus !== 'Inactivo';
 
+  const rawH = req.body.hourMeter !== undefined ? req.body.hourMeter : req.body.hours;
+  let parsedH = rawH !== undefined && rawH !== null && rawH !== '' ? Number(rawH) : null;
+
   equipments[idx] = {
     ...equipments[idx],
     ...req.body,
+    hourMeter: parsedH !== null ? String(parsedH) : (equipments[idx].hourMeter || '0'),
+    hours: parsedH !== null ? parsedH : (Number(equipments[idx].hours) || 0),
     status: updatedStatus,
     active: updatedActive,
     id: equipments[idx].id,
     updatedAt: new Date().toISOString()
   };
+
+  if (parsedH !== null && parsedH > 0) {
+    if (!equipments[idx].lastReadingDate) {
+      equipments[idx].lastReadingDate = new Date().toISOString().split('T')[0];
+    }
+    const cycle = equipments[idx].maintenanceCycle || equipments[idx].cycleType || 'ciclo_2000';
+    if (!equipments[idx].nextMaintenance || !equipments[idx].nextMaintenance.milestoneHours) {
+      const seq = determineNextMaintenancePlan(equipments[idx], equipments[idx].lastMaintenance);
+      equipments[idx].nextMaintenance = {
+        milestoneHours: seq.nextMilestoneHours || computeNextMilestoneHours(parsedH, cycle),
+        plan: seq.nextPlan || getPlanForMilestone(seq.nextMilestoneHours || computeNextMilestoneHours(parsedH, cycle), cycle)
+      };
+    }
+  }
 
   writeJson(EQUIPMENTS_FILE, equipments);
   await saveEquipmentToGoogleSheets(equipments[idx]).catch(() => null);
@@ -1157,7 +1176,7 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   const today = currentDateStr || new Date().toISOString().split('T')[0];
   const cycle = equipment.maintenanceCycle || equipment.cycleType || 'ciclo_2000';
   const step = cycle === 'ciclo_3000' ? 3000 : 2000;
-  const currentHours = Number(equipment.hourMeter) || 0;
+  const currentHours = Number(equipment.hourMeter !== undefined && equipment.hourMeter !== null && equipment.hourMeter !== '' ? equipment.hourMeter : (equipment.hours || 0)) || 0;
 
   const lastMaint = equipment.lastMaintenance || null;
   const nextMaintConfig = equipment.nextMaintenance || null;
@@ -1174,7 +1193,51 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   let nextServiceType = seq.nextServiceType;
   let lastMaintenanceType = formatMaintenanceTypeLabel(lastMaintPlan) || (lastMaintDate ? lastMaintPlan : null);
 
-  const hasHistoryOrConfig = (lastMaintHours !== null && lastMaintDate) || nextMilestone !== null;
+  const history = Array.isArray(equipment.readingsHistory) ? equipment.readingsHistory : [];
+  const latestHistoryEntry = history.length > 0 ? history[0] : null;
+
+  // Determinar la última lectura u horómetro válido del equipo
+  let lastHoro = null;
+  if (lastMaintHours !== null) {
+    lastHoro = lastMaintHours;
+  } else if (currentHours > 0) {
+    lastHoro = currentHours;
+  } else if (latestHistoryEntry && (latestHistoryEntry.hourMeter !== undefined || latestHistoryEntry.hours !== undefined)) {
+    lastHoro = Number(latestHistoryEntry.hourMeter !== undefined ? latestHistoryEntry.hourMeter : latestHistoryEntry.hours);
+  }
+
+  // Fecha del último servicio o lectura registrada
+  let lastReadingDate = lastMaintDate || equipment.lastReadingDate || (latestHistoryEntry ? latestHistoryEntry.date : null);
+
+  // Si no hay configuración previa ni último mantenimiento, pero el equipo tiene horas > 0,
+  // calcular automáticamente el próximo hito y plan según su horómetro actual y ciclo
+  if (nextMilestone === null) {
+    if (lastMaintHours !== null) {
+      nextMilestone = seq.nextMilestoneHours || computeNextMilestoneHours(lastMaintHours, cycle);
+    } else if (currentHours > 0) {
+      nextMilestone = computeNextMilestoneHours(currentHours, cycle);
+    }
+  }
+  if (!nextPlan && nextMilestone !== null) {
+    nextPlan = seq.nextPlan || getPlanForMilestone(nextMilestone, cycle);
+  }
+  if (!nextServiceType || nextServiceType === 'PENDIENTE DE CONFIGURACIÓN') {
+    if (nextMilestone !== null) {
+      nextServiceType = formatMaintenanceTypeLabel(nextMilestone) || `${nextMilestone.toLocaleString('en-US')} h`;
+    }
+  }
+
+  // Si no hay último mantenimiento formal registrado pero el equipo tiene horas > 0,
+  // sugerir el hito previo alcanzado en su ciclo
+  if (!lastMaintenanceType && currentHours > 0) {
+    const prevMilestone = Math.floor(currentHours / step) * step;
+    if (prevMilestone > 0) {
+      const prevPlan = getPlanForMilestone(prevMilestone, cycle);
+      lastMaintenanceType = formatMaintenanceTypeLabel(prevPlan) || formatMaintenanceTypeLabel(prevMilestone) || `${prevMilestone.toLocaleString('en-US')} h`;
+    }
+  }
+
+  const hasHistoryOrConfig = (lastMaintHours !== null && lastMaintDate) || nextMilestone !== null || currentHours > 0 || history.length > 0;
 
   if (!hasHistoryOrConfig) {
     return {
@@ -1187,6 +1250,8 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
       statusColor: 'slate',
       statusIcon: '⚪',
       currentHours,
+      lastHoro: null,
+      lastReadingDate: null,
       lastMaintDate: null,
       lastMaintHours: null,
       lastMaintPlan: null,
@@ -1217,7 +1282,9 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   }
 
   const hoursRemaining = nextMilestone !== null ? (nextMilestone - currentHours) : null;
-  const quarterlyEstimatedDate = lastMaintDate ? addCalendarMonths(lastMaintDate, 3) : null;
+  const quarterlyEstimatedDate = lastMaintDate 
+    ? addCalendarMonths(lastMaintDate, 3) 
+    : (lastReadingDate ? addCalendarMonths(lastReadingDate, 3) : (equipment.createdAt ? addCalendarMonths(equipment.createdAt, 3) : null));
 
   let usageEstimatedDate = null;
   const monthlyAvg = Number(equipment.monthlyAverageHours) || 0;
@@ -1330,7 +1397,8 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     urgencyScore = 50;
   }
 
-  if (!lastMaintDate) {
+  // Solo si no hay fecha de mantenimiento Y el equipo tiene horómetro 0 sin lecturas, es PENDIENTE DE DATOS
+  if (!lastMaintDate && currentHours === 0 && (!history || history.length === 0)) {
     simplifiedStatus = 'PENDIENTE DE DATOS';
   }
 
@@ -1347,6 +1415,8 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     urgencyRank,
     urgencyScore,
     currentHours,
+    lastHoro,
+    lastReadingDate,
     lastMaintDate,
     lastMaintHours,
     lastMaintPlan,
@@ -1462,7 +1532,7 @@ function applyReportToEquipmentHorometer(report) {
 
   // Regla de negocio: Actualizar horómetro actual si la lectura es válida y no es una fecha más antigua
   let horometerUpdated = false;
-  if (validHour && !isOlderDate) {
+  if (validHour && (!isOlderDate || repHourMeter >= currentEqHours)) {
     eq.hourMeter = String(repHourMeter);
     eq.hours = repHourMeter;
     eq.lastReadingDate = repDate;
@@ -1501,6 +1571,7 @@ function applyReportToEquipmentHorometer(report) {
   eq.updatedAt = new Date().toISOString();
 
   writeJson(EQUIPMENTS_FILE, equipments);
+  saveEquipmentToGoogleSheets(eq).catch(() => null);
 
   return {
     success: true,
@@ -1573,6 +1644,7 @@ function removeReportFromEquipmentHorometer(report) {
 
   if (modified) {
     writeJson(EQUIPMENTS_FILE, equipments);
+    equipments.forEach(eq => saveEquipmentToGoogleSheets(eq).catch(() => null));
   }
 }
 
@@ -1641,6 +1713,30 @@ function bootstrapHorometersFromReports() {
         plan: seq.nextPlan
       };
       modified = true;
+    }
+  });
+
+  // Sincronizar y asegurar coherencia de horómetros base para equipos sin mantenimientos aún registrados
+  equipments.forEach(eq => {
+    const h = Number(eq.hourMeter !== undefined && eq.hourMeter !== null && eq.hourMeter !== '' ? eq.hourMeter : (eq.hours || 0)) || 0;
+    if (h > 0) {
+      if (eq.hours === undefined || eq.hours === null || eq.hours === 0) {
+        eq.hours = h;
+        modified = true;
+      }
+      if (!eq.lastReadingDate) {
+        eq.lastReadingDate = eq.createdAt?.split('T')[0] || eq.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0];
+        modified = true;
+      }
+      if (!eq.nextMaintenance || !eq.nextMaintenance.milestoneHours) {
+        const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
+        const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
+        eq.nextMaintenance = {
+          milestoneHours: seq.nextMilestoneHours || computeNextMilestoneHours(h, cycle),
+          plan: seq.nextPlan || getPlanForMilestone(seq.nextMilestoneHours || computeNextMilestoneHours(h, cycle), cycle)
+        };
+        modified = true;
+      }
     }
   });
 
@@ -1842,12 +1938,13 @@ function computeMonthlyMaintenanceProjection(enrichedList, todayStr = null) {
 app.get('/api/horometers', (req, res) => {
   const allEquipments = readJson(EQUIPMENTS_FILE, []);
   const today = req.query.date || new Date().toISOString().split('T')[0];
-  const mode = 'real';
+  const mode = req.query.mode === 'demo' ? 'demo' : (req.query.mode === 'all' ? 'all' : 'real');
 
-  // Strictly real operational equipments for INDUSTRAC production
-  const filteredEquipments = allEquipments.filter(e => !e.isDemo);
-  const realEquipmentsCount = filteredEquipments.length;
-  const demoEquipmentsCount = 0;
+  const filteredEquipments = mode === 'demo'
+    ? allEquipments.filter(e => !!e.isDemo)
+    : (mode === 'all' ? allEquipments : allEquipments.filter(e => !e.isDemo));
+  const realEquipmentsCount = allEquipments.filter(e => !e.isDemo).length;
+  const demoEquipmentsCount = allEquipments.filter(e => !!e.isDemo).length;
 
   let totalEquipments = filteredEquipments.length;
   let upToDate = 0;
@@ -1874,8 +1971,8 @@ app.get('/api/horometers', (req, res) => {
       status: metrics.statusCode,
       statusLabel: metrics.statusLabel,
       simplifiedStatus: metrics.simplifiedStatus,
-      lastServiceDate: metrics.lastMaintDate,
-      lastHorometer: metrics.lastMaintHours,
+      lastServiceDate: metrics.lastMaintDate || metrics.lastReadingDate || null,
+      lastHorometer: metrics.lastMaintHours !== null ? metrics.lastMaintHours : (metrics.lastHoro !== null ? metrics.lastHoro : (metrics.currentHours > 0 ? metrics.currentHours : null)),
       lastMaintenanceType: metrics.lastMaintenanceType,
       nextServiceType: metrics.nextServiceType,
       estimatedDate: metrics.quarterlyEstimatedDate,
@@ -1996,7 +2093,16 @@ app.post('/api/equipments/:id/readings', (req, res) => {
     user: user
   });
 
+  // Recalcular o avanzar próximo hito si no estaba configurado o fue alcanzado
+  const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
+  const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
+  eq.nextMaintenance = {
+    milestoneHours: seq.nextMilestoneHours || computeNextMilestoneHours(newHours, cycle),
+    plan: seq.nextPlan || getPlanForMilestone(seq.nextMilestoneHours || computeNextMilestoneHours(newHours, cycle), cycle)
+  };
+
   writeJson(EQUIPMENTS_FILE, equipments);
+  saveEquipmentToGoogleSheets(eq).catch(() => null);
 
   const metrics = calculateEquipmentHorometerMetrics(eq);
   res.json({
@@ -2069,6 +2175,7 @@ app.post('/api/equipments/:id/maintenance', (req, res) => {
   eq.updatedAt = new Date().toISOString();
 
   writeJson(EQUIPMENTS_FILE, equipments);
+  saveEquipmentToGoogleSheets(eq).catch(() => null);
 
   const metrics = calculateEquipmentHorometerMetrics(eq);
   res.json({
@@ -2142,6 +2249,7 @@ app.put('/api/equipments/:id/maintenance-config', (req, res) => {
 
   eq.updatedAt = new Date().toISOString();
   writeJson(EQUIPMENTS_FILE, equipments);
+  saveEquipmentToGoogleSheets(eq).catch(() => null);
 
   const metrics = calculateEquipmentHorometerMetrics(eq);
   res.json({

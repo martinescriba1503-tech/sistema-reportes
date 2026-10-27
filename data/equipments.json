@@ -24,7 +24,7 @@
     "readingsHistory": [],
     "lastReadingDate": null,
     "hours": 0,
-    "updatedAt": "2026-10-27T17:42:18.062Z"
+    "updatedAt": "2026-10-27T20:54:06.682Z"
   },
   {
     "id": "eq-1791822719857",
@@ -45,7 +45,13 @@
     "active": true,
     "notes": "",
     "isDemo": false,
-    "createdAt": "2026-10-12T16:31:59.857Z"
+    "createdAt": "2026-10-12T16:31:59.857Z",
+    "hours": 86990,
+    "lastReadingDate": "2026-10-12",
+    "nextMaintenance": {
+      "milestoneHours": 88000,
+      "plan": "Plan C — 8000 horas"
+    }
   },
   {
     "id": "eq-1792171680294",
@@ -66,7 +72,13 @@
     "active": true,
     "notes": "Compresor Kaeser SK15T. Módulo tipo MKS Básico.",
     "isDemo": false,
-    "createdAt": "2026-10-16T17:28:00.295Z"
+    "createdAt": "2026-10-16T17:28:00.295Z",
+    "hours": 5934,
+    "lastReadingDate": "2026-10-16",
+    "nextMaintenance": {
+      "milestoneHours": 6000,
+      "plan": "Plan A — 2000 horas"
+    }
   },
   {
     "id": "eq-emusa-com-1007",
@@ -211,7 +223,11 @@
     "isDemo": false,
     "createdAt": "2026-10-27T10:00:00.000Z",
     "lastMaintenance": null,
-    "nextMaintenance": null,
-    "readingsHistory": []
+    "nextMaintenance": {
+      "milestoneHours": 8000,
+      "plan": "Plan C — 8000 horas"
+    },
+    "readingsHistory": [],
+    "lastReadingDate": "2026-10-27"
   }
 ]
