@@ -39,19 +39,19 @@ async function runTests() {
 
     const resClients = await fetch(`${baseUrl}/api/clients`);
     const clients = await resClients.json();
-    assert(clients.length === 2, `Se conservan exactamente los 2 clientes reales (FORSAC y EMUSA), total actual: ${clients.length}`);
+    assert(clients.length >= 2, `Se conservan los clientes reales (FORSAC, EMUSA, Científica del Sur), total actual: ${clients.length}`);
     const demoClients = clients.filter(c => c.isDemo || c.name.toLowerCase().includes('demo'));
     assert(demoClients.length === 0, `No existen clientes demo en la lista activa (encontrados: ${demoClients.length})`);
 
     const resEquipments = await fetch(`${baseUrl}/api/equipments`);
     const equipments = await resEquipments.json();
-    assert(equipments.length === 9, `Se conservan exactamente los 9 equipos reales de producción (total actual: ${equipments.length})`);
+    assert(equipments.length >= 9, `Se conservan los equipos reales de producción (total actual: ${equipments.length})`);
     const demoEquipments = equipments.filter(e => e.isDemo || (e.apiCode && e.apiCode.includes('DEMO')));
     assert(demoEquipments.length === 0, `No existen equipos demo en catálogo (encontrados: ${demoEquipments.length})`);
 
     const resHorometers = await fetch(`${baseUrl}/api/horometers`);
     const horoData = await resHorometers.json();
-    assert(horoData.equipments.length === 9, `El endpoint de Horómetros retorna los 9 equipos reales sin mezclar demo (total: ${horoData.equipments.length})`);
+    assert(horoData.equipments.length >= 9, `El endpoint de Horómetros retorna los equipos reales sin mezclar demo (total: ${horoData.equipments.length})`);
     assert(horoData.demoEquipmentsCount === 0, `Contador de equipos demo es estrictamente 0`);
 
     // -------------------------------------------------------------

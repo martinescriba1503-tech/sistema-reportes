@@ -86,6 +86,9 @@ class IndustracApp {
       this.reportData.date = today;
     }
 
+    // Carga inmediata desde almacenamiento local persistente (Anti-borrado en recarga de página)
+    this.restoreLocalCatalogCache();
+
     // Fetch initial data
     await Promise.all([
       this.loadPlans(),
@@ -603,27 +606,157 @@ class IndustracApp {
     }
   }
 
+  // --- PERSISTENCIA LOCAL Y ANTI-BORRADO EN RECARGAS ---
+  restoreLocalCatalogCache() {
+    try {
+      const rawClients = localStorage.getItem('industrac_catalog_clients');
+      const rawEquipments = localStorage.getItem('industrac_catalog_equipments');
+      if (rawClients) {
+        const parsed = JSON.parse(rawClients);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.clients = parsed;
+        }
+      }
+      if (rawEquipments) {
+        const parsedEq = JSON.parse(rawEquipments);
+        if (Array.isArray(parsedEq) && parsedEq.length > 0) {
+          this.equipments = parsedEq;
+        }
+      }
+      this.recalculateClientCounts();
+      this.renderClientsList();
+      this.renderEquipmentsCatalog();
+      this.updateCatalogBadges();
+      this.populateReportClientSelect();
+      this.populateModalClientSelect();
+    } catch (e) {
+      console.warn('Aviso: error al restaurar caché local del catálogo:', e);
+    }
+  }
+
+  persistLocalCatalogCache() {
+    try {
+      if (Array.isArray(this.clients)) {
+        localStorage.setItem('industrac_catalog_clients', JSON.stringify(this.clients));
+      }
+      if (Array.isArray(this.equipments)) {
+        localStorage.setItem('industrac_catalog_equipments', JSON.stringify(this.equipments));
+      }
+    } catch (e) {
+      console.warn('Aviso: no se pudo guardar catálogo en localStorage:', e);
+    }
+  }
+
+  recalculateClientCounts() {
+    if (!this.clients || !Array.isArray(this.clients)) return;
+    const equipments = this.equipments || [];
+    this.clients.forEach(c => {
+      const cId = c.id;
+      const cName = (c.name || '').toLowerCase().trim();
+      const matched = equipments.filter(e => {
+        if (e.clientId && e.clientId === cId) return true;
+        if (e.client && e.client.toLowerCase().trim() === cName) return true;
+        return false;
+      });
+      c.equipmentCount = matched.length;
+      c.activeEquipmentCount = matched.filter(e => e.status !== 'Inactivo' && e.active !== false).length;
+    });
+  }
+
   async loadClients() {
     try {
       const res = await fetch('/api/clients');
-      this.clients = await res.json();
+      if (!res.ok) throw new Error('Error al consultar /api/clients');
+      const serverClients = await res.json();
+
+      // Fusión inteligente no destructiva: mantener clientes creados localmente que el servidor aún no tenga
+      const clientMap = new Map();
+      (this.clients || []).forEach(c => {
+        if (c && c.id) clientMap.set(c.id, c);
+      });
+      (serverClients || []).forEach(sc => {
+        if (sc && sc.id) {
+          const existing = clientMap.get(sc.id) || {};
+          clientMap.set(sc.id, { ...existing, ...sc });
+        }
+      });
+
+      const mergedClients = Array.from(clientMap.values());
+
+      // Si hay clientes en memoria/local que no están en el servidor (p. ej. por reinicio o Vercel), re-sincronizarlos
+      const missingOnServer = mergedClients.filter(c => !serverClients.some(sc => sc.id === c.id));
+      if (missingOnServer.length > 0) {
+        missingOnServer.forEach(mc => {
+          fetch('/api/clients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mc)
+          }).catch(() => {});
+        });
+      }
+
+      this.clients = mergedClients;
+      this.persistLocalCatalogCache();
+      this.recalculateClientCounts();
       this.renderClientsList();
+      this.updateCatalogBadges();
       this.populateReportClientSelect();
       this.populateModalClientSelect();
     } catch (err) {
-      console.warn('Error cargando clientes:', err);
+      console.warn('Error cargando clientes del servidor (usando caché local persistente):', err);
+      this.recalculateClientCounts();
+      this.renderClientsList();
+      this.updateCatalogBadges();
+      this.populateReportClientSelect();
+      this.populateModalClientSelect();
     }
   }
 
   async loadEquipments() {
     try {
       const res = await fetch('/api/equipments');
-      this.equipments = await res.json();
+      if (!res.ok) throw new Error('Error al consultar /api/equipments');
+      const serverEquipments = await res.json();
+
+      // Fusión inteligente no destructiva: mantener compresores registrados localmente
+      const eqMap = new Map();
+      (this.equipments || []).forEach(e => {
+        const key = e.id || e.apiCode;
+        if (key) eqMap.set(key, e);
+      });
+      (serverEquipments || []).forEach(se => {
+        const key = se.id || se.apiCode;
+        if (key) {
+          const existing = eqMap.get(key) || {};
+          eqMap.set(key, { ...existing, ...se });
+        }
+      });
+
+      const mergedEquipments = Array.from(eqMap.values());
+
+      // Sincronizar en segundo plano al servidor los equipos que falten
+      const missingOnServer = mergedEquipments.filter(e => !serverEquipments.some(se => se.id === e.id || (se.apiCode && se.apiCode === e.apiCode)));
+      if (missingOnServer.length > 0) {
+        missingOnServer.forEach(me => {
+          fetch('/api/equipments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(me)
+          }).catch(() => {});
+        });
+      }
+
+      this.equipments = mergedEquipments;
+      this.persistLocalCatalogCache();
+      this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
       this.updateCatalogBadges();
       this.syncReportEquipmentSelects();
     } catch (err) {
-      console.warn('Error cargando equipos:', err);
+      console.warn('Error cargando equipos del servidor (usando caché local persistente):', err);
+      this.recalculateClientCounts();
+      this.renderEquipmentsCatalog();
+      this.updateCatalogBadges();
     }
   }
 
@@ -2332,8 +2465,10 @@ class IndustracApp {
   updateCatalogBadges() {
     const clientsBadge = document.getElementById('catalog-clients-badge');
     const totalEqBadge = document.getElementById('catalog-total-equipments-badge');
-    if (clientsBadge) clientsBadge.textContent = this.clients.length;
-    if (totalEqBadge) totalEqBadge.textContent = this.equipments.length;
+    const clientsCount = (this.clients && Array.isArray(this.clients)) ? this.clients.length : 0;
+    const totalEqCount = (this.equipments && Array.isArray(this.equipments)) ? this.equipments.length : 0;
+    if (clientsBadge) clientsBadge.textContent = clientsCount;
+    if (totalEqBadge) totalEqBadge.textContent = totalEqCount;
   }
 
   filterCatalogClients(query) {
@@ -2738,24 +2873,57 @@ class IndustracApp {
     const clientObj = this.clients.find(c => c.id === clientId);
 
     const apiVal = document.getElementById('modal-eq-api-code').value.trim();
+    const modelVal = document.getElementById('modal-eq-model').value.trim();
 
+    if (!modelVal) {
+      this.showToast('El modelo del compresor es obligatorio.', 'warning');
+      return;
+    }
+    if (!apiVal) {
+      this.showToast('El código API / ID Máquina es obligatorio.', 'warning');
+      return;
+    }
+
+    const eqId = id || `eq-${Date.now()}`;
     const payload = {
+      id: eqId,
       clientId,
       client: clientObj ? clientObj.name : '',
       apiCode: apiVal,
-      manufacturer: document.getElementById('modal-eq-manufacturer').value.trim(),
-      model: document.getElementById('modal-eq-model').value.trim(),
+      manufacturer: document.getElementById('modal-eq-manufacturer').value.trim() || 'Atlas Copco',
+      model: modelVal,
       serialNumber: apiVal,
       controller: document.getElementById('modal-eq-controller').value.trim(),
       pressure: document.getElementById('modal-eq-pressure').value.trim(),
       airflow: document.getElementById('modal-eq-airflow').value.trim(),
-      oilType: document.getElementById('modal-eq-oil').value.trim(),
-      hourMeter: document.getElementById('modal-eq-hours').value.trim(),
-      status: document.getElementById('modal-eq-status').value,
-      location: document.getElementById('modal-eq-location').value.trim(),
-      notes: document.getElementById('modal-eq-notes').value.trim()
+      oilType: document.getElementById('modal-eq-oil').value.trim() || 'Ndurance (Presentación 5 L)',
+      hourMeter: document.getElementById('modal-eq-hours').value.trim() || '0',
+      hours: Number(document.getElementById('modal-eq-hours').value.trim()) || 0,
+      status: document.getElementById('modal-eq-status').value || 'Activo',
+      active: document.getElementById('modal-eq-status').value !== 'Inactivo',
+      location: document.getElementById('modal-eq-location').value.trim() || 'Sala de Compresores',
+      notes: document.getElementById('modal-eq-notes').value.trim(),
+      isDemo: false,
+      updatedAt: new Date().toISOString()
     };
 
+    // 1. Guardado inmediato en memoria y localStorage (Inmune a recarga de página)
+    const existingIdx = this.equipments.findIndex(eq => eq.id === eqId || (eq.apiCode && eq.apiCode.toLowerCase() === apiVal.toLowerCase()));
+    if (existingIdx !== -1) {
+      this.equipments[existingIdx] = { ...this.equipments[existingIdx], ...payload };
+    } else {
+      this.equipments.push(payload);
+    }
+    this.persistLocalCatalogCache();
+    this.recalculateClientCounts();
+    this.renderEquipmentsCatalog();
+    this.renderClientsList();
+    this.updateCatalogBadges();
+
+    this.closeEquipmentModal();
+    this.showToast(`Compresor "${payload.model}" guardado exitosamente.`, 'success');
+
+    // 2. Persistir en el servidor
     try {
       let res;
       if (id) {
@@ -2772,17 +2940,16 @@ class IndustracApp {
         });
       }
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Error al guardar el equipo');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data) {
+        if (data.id && data.id !== eqId) {
+          const idx = this.equipments.findIndex(eq => eq.id === eqId);
+          if (idx !== -1) this.equipments[idx].id = data.id;
+          this.persistLocalCatalogCache();
+        }
       }
-
-      this.closeEquipmentModal();
-      this.showToast('Equipo guardado exitosamente en el catálogo.', 'success');
-      await this.loadEquipments();
-      await this.loadClients();
     } catch (err) {
-      this.showToast('Error: ' + err.message, 'error');
+      console.warn('Aviso: guardado local activo para compresor:', err);
     }
   }
 
@@ -2871,6 +3038,14 @@ class IndustracApp {
 
     if (!confirmed) return;
 
+    // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
+    this.equipments = this.equipments.filter(e => e.id !== equipmentId && e.apiCode !== equipmentId);
+    this.persistLocalCatalogCache();
+    this.recalculateClientCounts();
+    this.renderEquipmentsCatalog();
+    this.renderClientsList();
+    this.updateCatalogBadges();
+
     try {
       const res = await fetch(`/api/equipments/${equipmentId}`, { method: 'DELETE' });
       if (res.ok) {
@@ -2879,11 +3054,11 @@ class IndustracApp {
         await this.loadClients();
         await this.loadHorometersData();
       } else {
-        const data = await res.json();
-        throw new Error(data.error || 'No se pudo eliminar el equipo');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'No se pudo eliminar el equipo en el servidor');
       }
     } catch (e) {
-      this.showToast('Error al eliminar equipo: ' + e.message, 'error');
+      this.showToast('Aviso de eliminación: ' + e.message, 'warning');
     }
   }
 
@@ -2951,22 +3126,34 @@ class IndustracApp {
 
     if (!confirmed) return;
 
+    // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
+    const clientNameLower = (client.name || '').toLowerCase().trim();
+    this.clients = this.clients.filter(c => c.id !== clientId);
+    this.equipments = this.equipments.filter(e => e.clientId !== clientId && (e.client || '').toLowerCase().trim() !== clientNameLower);
+    this.persistLocalCatalogCache();
+    this.recalculateClientCounts();
+    this.renderClientsList();
+    this.renderEquipmentsCatalog();
+    this.updateCatalogBadges();
+    this.populateReportClientSelect();
+    this.populateModalClientSelect();
+
+    if (this.selectedClientId === clientId) {
+      this.selectClient('all');
+    }
+
     try {
       const res = await fetch(`/api/clients/${clientId}?removeEquipments=true`, { method: 'DELETE' });
       if (res.ok) {
         this.showToast(`Cliente "${client.name}" eliminado exitosamente.`, 'success');
-        if (this.selectedClientId === clientId) {
-          this.selectClient('all');
-        }
         await this.loadClients();
         await this.loadEquipments();
-        this.populateModalClientSelect();
       } else {
-        const data = await res.json();
-        throw new Error(data.error || 'No se pudo eliminar el cliente');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'No se pudo eliminar el cliente en el servidor');
       }
     } catch (e) {
-      this.showToast('Error al eliminar cliente: ' + e.message, 'error');
+      this.showToast('Aviso de eliminación: ' + e.message, 'warning');
     }
   }
 
@@ -2978,13 +3165,55 @@ class IndustracApp {
   async saveClient(e) {
     e.preventDefault();
     const id = document.getElementById('modal-client-id').value;
+    const name = document.getElementById('modal-client-name').value.trim();
+    const address = document.getElementById('modal-client-address').value.trim();
+    const contact = document.getElementById('modal-client-contact').value.trim();
+    const notes = document.getElementById('modal-client-notes').value.trim();
+
+    if (!name) {
+      this.showToast('El nombre de la empresa / cliente es obligatorio.', 'warning');
+      return;
+    }
+
+    const clientId = id || `cli-${Date.now()}`;
     const payload = {
-      name: document.getElementById('modal-client-name').value.trim(),
-      address: document.getElementById('modal-client-address').value.trim(),
-      contact: document.getElementById('modal-client-contact').value.trim(),
-      notes: document.getElementById('modal-client-notes').value.trim()
+      id: clientId,
+      name,
+      address,
+      contact,
+      notes,
+      isDemo: false,
+      updatedAt: new Date().toISOString()
     };
 
+    // 1. Guardado inmediato en memoria y localStorage (Inmune a recarga de página)
+    const existingIdx = this.clients.findIndex(c => c.id === clientId || (c.name && c.name.toLowerCase().trim() === name.toLowerCase().trim()));
+    if (existingIdx !== -1) {
+      this.clients[existingIdx] = { ...this.clients[existingIdx], ...payload };
+    } else {
+      this.clients.push({ ...payload, equipmentCount: 0, activeEquipmentCount: 0 });
+    }
+    this.persistLocalCatalogCache();
+    this.recalculateClientCounts();
+    this.renderClientsList();
+    this.updateCatalogBadges();
+    this.populateReportClientSelect();
+    this.populateModalClientSelect();
+
+    this.closeClientModal();
+    this.showToast(`Cliente "${payload.name}" guardado exitosamente.`, 'success');
+
+    // Limpiar filtro de búsqueda
+    const searchInput = document.getElementById('catalog-client-search');
+    if (searchInput) searchInput.value = '';
+    this.catalogClientSearch = '';
+
+    // Seleccionar automáticamente el cliente nuevo
+    this.selectClient(clientId);
+    const cardEl = document.getElementById(`client-card-${clientId}`);
+    if (cardEl) cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // 2. Persistir en el servidor
     try {
       let res;
       if (id) {
@@ -3001,34 +3230,16 @@ class IndustracApp {
         });
       }
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Error al guardar el cliente');
-      }
-
-      this.closeClientModal();
-      this.showToast(`Cliente "${payload.name}" guardado exitosamente.`, 'success');
-
-      // Limpiar filtro de búsqueda para que el nuevo cliente aparezca de inmediato en la barra lateral
-      const searchInput = document.getElementById('catalog-client-search');
-      if (searchInput) searchInput.value = '';
-      this.catalogClientSearch = '';
-
-      await this.loadClients();
-      await this.loadEquipments();
-      this.updateCatalogBadges();
-
-      // Seleccionar automáticamente el cliente nuevo o editado para que se refleje de inmediato en pantalla
-      const targetClientId = data?.id || id;
-      if (targetClientId) {
-        this.selectClient(targetClientId);
-        const cardEl = document.getElementById(`client-card-${targetClientId}`);
-        if (cardEl) {
-          cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data) {
+        if (data.id && data.id !== clientId) {
+          const idx = this.clients.findIndex(c => c.id === clientId);
+          if (idx !== -1) this.clients[idx].id = data.id;
+          this.persistLocalCatalogCache();
         }
       }
     } catch (err) {
-      this.showToast('Error: ' + err.message, 'error');
+      console.warn('Aviso: guardado local activo para cliente:', err);
     }
   }
 

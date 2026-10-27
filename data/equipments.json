@@ -71,7 +71,7 @@
     "readingsHistory": [],
     "lastReadingDate": null,
     "hours": 0,
-    "updatedAt": "2026-10-26T21:22:15.979Z"
+    "updatedAt": "2026-10-27T16:32:26.001Z"
   },
   {
     "id": "eq-1791822719857",
@@ -231,5 +231,34 @@
     "notes": "Compresor Atlas Copco GA45+. Módulo tipo MKS-II.",
     "isDemo": false,
     "createdAt": "2026-10-24T13:25:00.000Z"
+  },
+  {
+    "id": "eq-cds-ga75-001",
+    "clientId": "cli-cientifica-sur",
+    "client": "Científica del Sur",
+    "address": "Campus Villa El Salvador, Lima",
+    "manufacturer": "Atlas Copco",
+    "model": "GA 75 VSD+",
+    "serialNumber": "API 505738",
+    "apiCode": "API 505738",
+    "controller": "Elektronikon Touch",
+    "pressure": "8.5 bar",
+    "airflow": "470 cfm",
+    "oilType": "Ndurance (Presentación 5 L)",
+    "hourMeter": "6080",
+    "hours": 6080,
+    "location": "Caseta Central de Fuerza",
+    "status": "Activo",
+    "active": true,
+    "maintenanceCycle": "ciclo_2000",
+    "cycleType": "ciclo_2000",
+    "alertThresholdHours": 200,
+    "monthlyAverageHours": 280,
+    "notes": "Compresor principal.",
+    "isDemo": false,
+    "createdAt": "2026-10-27T10:00:00.000Z",
+    "lastMaintenance": null,
+    "nextMaintenance": null,
+    "readingsHistory": []
   }
 ]

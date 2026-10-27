@@ -325,7 +325,7 @@ function doPost(e) {
       return responseJson({ status: 'success', message: 'Cliente no encontrado o ya eliminado.' });
     }
 
-    // 8. SINCRONIZAR LISTA COMPLETA DE CLIENTES
+    // 8. SINCRONIZAR LISTA COMPLETA DE CLIENTES (FUSIÓN INTELIGENTE NO DESTRUCTIVA)
     if (action === 'sync_clients') {
       var clientSheet = getOrCreateSheet(ss, 'Clientes', [
         'ID Cliente',
@@ -336,14 +336,44 @@ function doPost(e) {
         'Última Actualización'
       ]);
 
-      var clients = data.clients || [];
+      var incomingClients = data.clients || [];
+      if (!Array.isArray(incomingClients) || incomingClients.length === 0) {
+        return responseJson({ status: 'success', message: 'Sin clientes para sincronizar.' });
+      }
+
+      var existingClients = parseClientsFromSheet(ss);
+      var clientMap = {};
+      existingClients.forEach(function(ec) {
+        if (ec.id) clientMap[ec.id] = ec;
+        if (ec.name) clientMap[ec.name.toLowerCase().trim()] = ec;
+      });
+
+      incomingClients.forEach(function(c) {
+        if (!c || !c.name) return;
+        var existing = clientMap[c.id] || clientMap[c.name.toLowerCase().trim()];
+        var merged = existing ? Object.assign(existing, c) : c;
+        if (c.id) clientMap[c.id] = merged;
+        if (c.name) clientMap[c.name.toLowerCase().trim()] = merged;
+      });
+
+      var uniqueClients = [];
+      var seenIds = {};
+      Object.keys(clientMap).forEach(function(k) {
+        var c = clientMap[k];
+        var uKey = c.id || c.name;
+        if (uKey && !seenIds[uKey]) {
+          seenIds[uKey] = true;
+          uniqueClients.push(c);
+        }
+      });
+
       var lastClientRow = clientSheet.getLastRow();
       if (lastClientRow > 1) {
         clientSheet.getRange(2, 1, lastClientRow - 1, clientSheet.getLastColumn()).clearContent();
       }
 
-      if (clients.length > 0) {
-        var clientRows = clients.map(function(c) {
+      if (uniqueClients.length > 0) {
+        var clientRows = uniqueClients.map(function(c) {
           return [
             c.id || '',
             c.name || '',
@@ -358,7 +388,7 @@ function doPost(e) {
 
       return responseJson({
         status: 'success',
-        message: clients.length + ' clientes sincronizados en Google Sheets.'
+        message: uniqueClients.length + ' clientes sincronizados y protegidos en Google Sheets.'
       });
     }
 
@@ -430,7 +460,7 @@ function doPost(e) {
       return responseJson({ status: 'success', message: 'Compresor no encontrado o ya eliminado.' });
     }
 
-    // 11. SINCRONIZAR PARQUE DE COMPRESORES COMPLETO
+    // 11. SINCRONIZAR PARQUE DE COMPRESORES COMPLETO (FUSIÓN INTELIGENTE NO DESTRUCTIVA)
     if (action === 'sync_equipments') {
       var eqSheet = getOrCreateSheet(ss, 'Parque de Compresores', [
         'ID Interno',
@@ -447,14 +477,45 @@ function doPost(e) {
         'Última Actualización'
       ]);
 
-      var equipments = data.equipments || [];
+      var incomingEquipments = data.equipments || [];
+      if (!Array.isArray(incomingEquipments) || incomingEquipments.length === 0) {
+        return responseJson({ status: 'success', message: 'Sin equipos para sincronizar.' });
+      }
+
+      var existingEquipments = parseEquipmentsFromSheet(ss);
+      var eqMap = {};
+      existingEquipments.forEach(function(ee) {
+        var key = ee.id || ee.apiCode;
+        if (key) eqMap[key] = ee;
+      });
+
+      incomingEquipments.forEach(function(eq) {
+        if (!eq) return;
+        var key = eq.id || eq.apiCode;
+        if (key) {
+          var existing = eqMap[key];
+          eqMap[key] = existing ? Object.assign(existing, eq) : eq;
+        }
+      });
+
+      var uniqueEquipments = [];
+      var seenEqKeys = {};
+      Object.keys(eqMap).forEach(function(k) {
+        var eq = eqMap[k];
+        var uKey = eq.id || eq.apiCode;
+        if (uKey && !seenEqKeys[uKey]) {
+          seenEqKeys[uKey] = true;
+          uniqueEquipments.push(eq);
+        }
+      });
+
       var lastRow = eqSheet.getLastRow();
       if (lastRow > 1) {
         eqSheet.getRange(2, 1, lastRow - 1, eqSheet.getLastColumn()).clearContent();
       }
 
-      if (equipments.length > 0) {
-        var eqRows = equipments.map(function(eq) {
+      if (uniqueEquipments.length > 0) {
+        var eqRows = uniqueEquipments.map(function(eq) {
           return [
             eq.id || '',
             eq.apiCode || eq.serialNumber || '',
@@ -475,7 +536,7 @@ function doPost(e) {
 
       return responseJson({
         status: 'success',
-        message: equipments.length + ' equipos sincronizados en Google Sheets.'
+        message: uniqueEquipments.length + ' equipos sincronizados y protegidos en Google Sheets.'
       });
     }
 

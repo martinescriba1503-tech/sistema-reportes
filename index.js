@@ -64,12 +64,20 @@ function readJson(filePath, defaultValue = []) {
 }
 
 function writeJson(filePath, data) {
-  if (process.env.VERCEL) {
-    memoryStore[filePath] = data;
-  }
+  memoryStore[filePath] = data;
 
   try {
     const content = JSON.stringify(data, null, 2);
+
+    // En Vercel serverless, el sistema de archivos principal es de solo lectura; persistir en /tmp
+    if (process.env.VERCEL) {
+      try {
+        const tmpPath = path.join('/tmp', path.basename(filePath));
+        fs.writeFileSync(tmpPath, content, 'utf8');
+      } catch (tmpErr) {}
+      return true;
+    }
+
     try {
       const tempPath = `${filePath}.tmp`;
       fs.writeFileSync(tempPath, content, 'utf8');
@@ -80,14 +88,11 @@ function writeJson(filePath, data) {
     }
     return true;
   } catch (err) {
-    // Si el entorno es de solo lectura (como Vercel serverless / EROFS), persistir en /tmp
     if (process.env.VERCEL) {
       try {
         const tmpPath = path.join('/tmp', path.basename(filePath));
         fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-      } catch (tmpErr) {
-        console.warn(`[Storage Warning] Entorno serverless solo-lectura: ${err.message}`);
-      }
+      } catch (tmpErr) {}
       return true;
     }
     console.error(`Error writing ${filePath}:`, err);
@@ -567,7 +572,7 @@ app.get('/api/clients', (req, res) => {
   res.json(clientsWithStats);
 });
 
-app.post('/api/clients', (req, res) => {
+app.post('/api/clients', async (req, res) => {
   const clients = readJson(CLIENTS_FILE, []);
   const name = (req.body.name || '').trim();
 
@@ -593,11 +598,11 @@ app.post('/api/clients', (req, res) => {
 
   clients.push(newClient);
   writeJson(CLIENTS_FILE, clients);
-  syncClientsToGoogleSheets();
+  await syncClientsToGoogleSheets().catch(() => null);
   res.status(201).json(newClient);
 });
 
-app.put('/api/clients/:id', (req, res) => {
+app.put('/api/clients/:id', async (req, res) => {
   const clients = readJson(CLIENTS_FILE, []);
   const idx = clients.findIndex(c => c.id === req.params.id);
 
@@ -623,7 +628,7 @@ app.put('/api/clients/:id', (req, res) => {
     id: clients[idx].id
   };
   writeJson(CLIENTS_FILE, clients);
-  syncClientsToGoogleSheets();
+  await syncClientsToGoogleSheets().catch(() => null);
 
   // Sync client name in associated equipments
   if (newName !== oldName) {
@@ -638,14 +643,14 @@ app.put('/api/clients/:id', (req, res) => {
     });
     if (eqModified) {
       writeJson(EQUIPMENTS_FILE, equipments);
-      syncEquipmentsToGoogleSheets();
+      await syncEquipmentsToGoogleSheets().catch(() => null);
     }
   }
 
   res.json(clients[idx]);
 });
 
-app.delete('/api/clients/:id', (req, res) => {
+app.delete('/api/clients/:id', async (req, res) => {
   let clients = readJson(CLIENTS_FILE, []);
   const clientToDelete = clients.find(c => c.id === req.params.id);
 
@@ -655,7 +660,7 @@ app.delete('/api/clients/:id', (req, res) => {
 
   clients = clients.filter(c => c.id !== req.params.id);
   writeJson(CLIENTS_FILE, clients);
-  syncClientsToGoogleSheets();
+  await syncClientsToGoogleSheets().catch(() => null);
 
   // Also remove or disassociate its equipments if requested
   const removeEquipments = req.query.removeEquipments === 'true';
@@ -663,7 +668,7 @@ app.delete('/api/clients/:id', (req, res) => {
   if (removeEquipments) {
     equipments = equipments.filter(e => e.clientId !== req.params.id && e.client !== clientToDelete.name);
     writeJson(EQUIPMENTS_FILE, equipments);
-    syncEquipmentsToGoogleSheets();
+    await syncEquipmentsToGoogleSheets().catch(() => null);
   }
 
   res.json({ message: 'Cliente eliminado exitosamente.' });
@@ -723,7 +728,7 @@ app.get('/api/equipments/:id/reports', (req, res) => {
   res.json(matchedReports);
 });
 
-app.post('/api/equipments', (req, res) => {
+app.post('/api/equipments', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
   const clients = readJson(CLIENTS_FILE, []);
 
@@ -750,6 +755,7 @@ app.post('/api/equipments', (req, res) => {
     };
     clients.push(clientObj);
     writeJson(CLIENTS_FILE, clients);
+    await syncClientsToGoogleSheets().catch(() => null);
   }
 
   // Generate API Code if not provided
@@ -805,11 +811,11 @@ app.post('/api/equipments', (req, res) => {
 
   equipments.push(newEquipment);
   writeJson(EQUIPMENTS_FILE, equipments);
-  syncEquipmentsToGoogleSheets();
+  await syncEquipmentsToGoogleSheets().catch(() => null);
   res.status(201).json(newEquipment);
 });
 
-app.put('/api/equipments/:id', (req, res) => {
+app.put('/api/equipments/:id', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
   const idx = equipments.findIndex(e => e.id === req.params.id);
 
@@ -838,12 +844,12 @@ app.put('/api/equipments/:id', (req, res) => {
   };
 
   writeJson(EQUIPMENTS_FILE, equipments);
-  syncEquipmentsToGoogleSheets();
+  await syncEquipmentsToGoogleSheets().catch(() => null);
   res.json(equipments[idx]);
 });
 
 // Toggle equipment active/inactive status without deleting history
-app.patch('/api/equipments/:id/status', (req, res) => {
+app.patch('/api/equipments/:id/status', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
   const idx = equipments.findIndex(e => e.id === req.params.id);
 
@@ -857,10 +863,11 @@ app.patch('/api/equipments/:id/status', (req, res) => {
   equipments[idx].updatedAt = new Date().toISOString();
 
   writeJson(EQUIPMENTS_FILE, equipments);
+  await syncEquipmentsToGoogleSheets().catch(() => null);
   res.json({ message: `Equipo marcado como ${newStatus}`, equipment: equipments[idx] });
 });
 
-app.delete('/api/equipments/:id', (req, res) => {
+app.delete('/api/equipments/:id', async (req, res) => {
   let equipments = readJson(EQUIPMENTS_FILE, []);
   const eq = equipments.find(e => e.id === req.params.id);
 
@@ -870,7 +877,7 @@ app.delete('/api/equipments/:id', (req, res) => {
 
   equipments = equipments.filter(e => e.id !== req.params.id);
   writeJson(EQUIPMENTS_FILE, equipments);
-  syncEquipmentsToGoogleSheets();
+  await syncEquipmentsToGoogleSheets().catch(() => null);
   res.json({ message: 'Equipo eliminado exitosamente.' });
 });
 
@@ -2267,20 +2274,26 @@ async function syncClientsToGoogleSheets() {
     const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
     const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
     const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl) return null;
-    if (settings.autoSyncSheets === false) return null;
+    if (!webhookUrl || settings.autoSyncSheets === false) return null;
 
     const clients = readJson(CLIENTS_FILE, []).filter(c => !c.isDemo && !(c.name && c.name.toLowerCase().includes('demo')));
-    fetch(webhookUrl, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'sync_clients',
         clients: clients
-      })
-    }).catch(e => console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar clientes:', e.message));
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await res.json().catch(() => null);
   } catch (err) {
-    console.warn('[Google Sheets Sync] Error al preparar sincronización de clientes:', err.message);
+    console.warn('[Google Sheets Sync] Aviso: sincronización de clientes finalizada:', err.message);
+    return null;
   }
 }
 
@@ -2289,20 +2302,26 @@ async function syncEquipmentsToGoogleSheets() {
     const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
     const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
     const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl) return null;
-    if (settings.autoSyncSheets === false) return null;
+    if (!webhookUrl || settings.autoSyncSheets === false) return null;
 
     const equipments = readJson(EQUIPMENTS_FILE, []).filter(e => !e.isDemo);
-    fetch(webhookUrl, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'sync_equipments',
         equipments: equipments
-      })
-    }).catch(e => console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar equipos:', e.message));
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await res.json().catch(() => null);
   } catch (err) {
-    console.warn('[Google Sheets Sync] Error al preparar sincronización de equipos:', err.message);
+    console.warn('[Google Sheets Sync] Aviso: sincronización de equipos finalizada:', err.message);
+    return null;
   }
 }
 
