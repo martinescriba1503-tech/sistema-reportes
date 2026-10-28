@@ -84,10 +84,14 @@ body {
   color: inherit;
 }
 
-.brand-logo-svg {
+.brand-logo-svg,
+.brand-logo-img {
   width: 44px;
   height: 44px;
   flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .brand-text h1 {

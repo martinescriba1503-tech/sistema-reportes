@@ -19,62 +19,76 @@ class IndustracPdfGenerator {
       warning: [245, 158, 11],     // #F59E0B (Naranja / Medio)
       danger: [239, 68, 68]
     };
+
+    this.logoImg = null;
+    if (typeof Image !== 'undefined') {
+      try {
+        this.logoImg = new Image();
+        this.logoImg.src = 'assets/logo.png';
+      } catch (e) {}
+    }
   }
 
-  // Draw corporate logo to dataURL on canvas
+  // Draw corporate logo to dataURL on canvas using new Industrac emblem
   generateLogoDataUrl() {
     const canvas = document.createElement('canvas');
-    canvas.width = 320;
+    canvas.width = 340;
     canvas.height = 100;
     const ctx = canvas.getContext('2d');
 
     // Transparent / clean background
-    ctx.clearRect(0, 0, 320, 100);
+    ctx.clearRect(0, 0, 340, 100);
 
-    // Modern Industrial Rotor Icon
-    ctx.fillStyle = '#031240';
-    ctx.beginPath();
-    ctx.roundRect(10, 10, 75, 75, 12);
-    ctx.fill();
+    const logoImg = (this.logoImg && this.logoImg.complete && this.logoImg.naturalWidth > 0)
+      ? this.logoImg
+      : document.getElementById('corp-logo-img');
+    let drewImg = false;
+    if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
+      try {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(50, 50, 44, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(logoImg, 6, 6, 88, 88);
+        ctx.restore();
+        drewImg = true;
+      } catch (e) {
+        console.warn('Error dibujando logo en canvas:', e);
+      }
+    }
 
-    // Cyan rotor air chevron
-    ctx.fillStyle = '#18A2D9';
-    ctx.beginPath();
-    ctx.moveTo(47, 24);
-    ctx.lineTo(68, 47);
-    ctx.lineTo(47, 70);
-    ctx.lineTo(38, 61);
-    ctx.lineTo(50, 47);
-    ctx.lineTo(38, 33);
-    ctx.closePath();
-    ctx.fill();
+    if (!drewImg) {
+      // Fallback: Circular blue badge
+      ctx.fillStyle = '#005CB9';
+      ctx.beginPath();
+      ctx.arc(50, 50, 44, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Secondary chevron
-    ctx.fillStyle = '#14B5D9';
-    ctx.beginPath();
-    ctx.moveTo(33, 30);
-    ctx.lineTo(50, 47);
-    ctx.lineTo(33, 64);
-    ctx.lineTo(24, 55);
-    ctx.lineTo(32, 47);
-    ctx.lineTo(24, 39);
-    ctx.closePath();
-    ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(50, 50, 24, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#005CB9';
+      ctx.beginPath();
+      ctx.arc(50, 50, 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // Typography: INDUSTRAC S.A.C.
     ctx.fillStyle = '#031240';
-    ctx.font = '900 30px sans-serif';
-    ctx.fillText('INDUSTRAC', 98, 46);
+    ctx.font = '900 29px sans-serif';
+    ctx.fillText('INDUSTRAC', 105, 47);
 
-    ctx.fillStyle = '#18A2D9';
+    ctx.fillStyle = '#005CB9';
     ctx.font = '700 16px sans-serif';
-    ctx.fillText('S.A.C.', 274, 36);
+    ctx.fillText('S.A.C.', 282, 37);
 
     // Subtitle
     ctx.fillStyle = '#64748B';
-    ctx.font = '600 10px sans-serif';
-    ctx.letterSpacing = '1px';
-    ctx.fillText('COMPRESORES DE AIRE & SERVICIOS INDUSTRIALES', 98, 65);
+    ctx.font = '600 9.5px sans-serif';
+    ctx.fillText('COMPRESORES DE AIRE & SERVICIOS INDUSTRIALES', 105, 66);
 
     return canvas.toDataURL('image/png');
   }
@@ -151,6 +165,12 @@ class IndustracPdfGenerator {
     currentY += 15;
 
     // --- SECCIÓN 1: DATOS GENERALES Y DEL EQUIPO ---
+    const is2000Maint = (report.maintenanceType || '').includes('2000') || /plan\s*a/i.test(report.maintenanceType || '');
+    let displayOilType = 'No aplica';
+    if (!is2000Maint && report.oilType && report.oilType !== 'No aplica') {
+      displayOilType = report.oilType === 'Otro' ? `Otro: ${report.customOil || ''}` : report.oilType;
+    }
+
     const generalDataRows = [
       [
         { content: 'Cliente / Compañía:', styles: { fontStyle: 'bold', fillColor: this.colors.grayBg } },
@@ -190,7 +210,7 @@ class IndustracPdfGenerator {
       ],
       [
         { content: 'Tipo de Aceite:', styles: { fontStyle: 'bold', fillColor: this.colors.grayBg } },
-        { content: report.oilType === 'Otro' ? `Otro: ${report.customOil || ''}` : (report.oilType || 'Ndurance (Presentación 5 L)') },
+        { content: displayOilType },
         { content: 'Nivel de Aceite:', styles: { fontStyle: 'bold', fillColor: this.colors.grayBg } },
         this.getOilLevelPdfCell(report.oilLevel || 'Alto')
       ],

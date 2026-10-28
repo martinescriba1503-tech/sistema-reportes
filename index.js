@@ -240,40 +240,24 @@ app.put('/api/reports/:id', (req, res) => {
     const reports = readJson(REPORTS_FILE, []);
     const index = reports.findIndex(r => r.id === req.params.id || r.reportNumber === req.params.id);
 
-    let updated;
     if (index === -1) {
-      // UPSERT: Si el reporte no se encontró en reports.json (ej. por borrado previo o desincronización de borrador),
-      // lo creamos como nuevo reporte para garantizar que NUNCA se pierda el trabajo del usuario.
-      const reportData = req.body;
-      let validReportNumber = reportData.reportNumber || req.params.id;
-      if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
-        validReportNumber = getNextReportNumber(false);
-      }
-      updated = {
-        ...reportData,
-        id: req.params.id || `rep-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        reportNumber: validReportNumber,
-        status: reportData.status || 'Borrador',
-        createdAt: reportData.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      reports.unshift(updated);
-    } else {
-      const current = reports[index];
-      let validReportNumber = current.reportNumber;
-      if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
-        validReportNumber = getNextReportNumber(false);
-      }
-
-      updated = {
-        ...current,
-        ...req.body,
-        id: current.id, // Immutable ID
-        reportNumber: validReportNumber, // Immutable once assigned
-        updatedAt: new Date().toISOString()
-      };
-      reports[index] = updated;
+      return res.status(404).json({ error: 'Reporte no encontrado en el sistema o fue eliminado previamente.' });
     }
+
+    const current = reports[index];
+    let validReportNumber = current.reportNumber;
+    if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
+      validReportNumber = getNextReportNumber(false);
+    }
+
+    const updated = {
+      ...current,
+      ...req.body,
+      id: current.id, // Immutable ID
+      reportNumber: validReportNumber, // Immutable once assigned
+      updatedAt: new Date().toISOString()
+    };
+    reports[index] = updated;
 
     writeJson(REPORTS_FILE, reports);
 
@@ -1633,10 +1617,35 @@ function removeReportFromEquipmentHorometer(report) {
         };
       } else {
         eq.lastMaintenance = null;
-        eq.nextMaintenance = null;
-        eq.lastReadingDate = null;
-        eq.hourMeter = '0';
-        eq.hours = 0;
+        const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        if (allReadings.length > 0) {
+          const latestR = allReadings[0];
+          eq.lastReadingDate = latestR.date;
+          eq.hourMeter = String(latestR.hourMeter || latestR.hours || 0);
+          eq.hours = Number(eq.hourMeter);
+        } else {
+          // Mantener horómetro base original del catálogo si existía
+          const baseHours = Number(eq.hours || eq.hourMeter || 0);
+          if (baseHours > 0) {
+            eq.hourMeter = String(baseHours);
+            eq.hours = baseHours;
+          } else {
+            eq.lastReadingDate = null;
+            eq.hourMeter = '0';
+            eq.hours = 0;
+          }
+        }
+        const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
+        const currentH = Number(eq.hours || eq.hourMeter || 0);
+        if (currentH > 0) {
+          const nextH = computeNextMilestoneHours(currentH, cycle);
+          eq.nextMaintenance = {
+            milestoneHours: nextH,
+            plan: getPlanForMilestone(nextH, cycle)
+          };
+        } else {
+          eq.nextMaintenance = null;
+        }
       }
       eq.updatedAt = new Date().toISOString();
     }
@@ -1688,7 +1697,9 @@ function bootstrapHorometersFromReports() {
         eq.readingsHistory.push(entry);
       }
 
-      if (validH && (!eq.lastReadingDate || repDate >= eq.lastReadingDate || repHour >= (Number(eq.hourMeter) || 0))) {
+      // Horómetro solo avanza o se mantiene, nunca disminuye
+      const currentH = Number(eq.hours || eq.hourMeter || 0);
+      if (validH && repHour >= currentH) {
         eq.hourMeter = String(repHour);
         eq.hours = repHour;
         eq.lastReadingDate = repDate;
@@ -2400,11 +2411,12 @@ async function deleteReportFromGoogleSheets(report) {
       return null;
     }
 
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: '', autoSyncSheets: true });
-    if (!settings.googleSheetsWebhookUrl || !settings.googleSheetsWebhookUrl.trim()) return null;
-    if (settings.autoSyncSheets === false) return null;
+    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
+    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
+    if (!webhookUrl || settings.autoSyncSheets === false) return null;
 
-    const res = await fetch(settings.googleSheetsWebhookUrl.trim(), {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -45,6 +45,9 @@ class IndustracApp {
     this.catalogClientSearch = '';
     this.plans = null;
     this.reports = [];
+    this.lastSelectedOilType = 'Ndurance (Presentación 5 L)';
+    this.oilTypeGroup = null;
+    this.maintenanceTypeGroup = null;
     this.reportData = this.getEmptyReport();
 
     // Components
@@ -120,7 +123,7 @@ class IndustracApp {
       pressure: '',
       airflow: '',
       hourMeter: '',
-      oilType: 'Ndurance (Presentación 5 L)',
+      oilType: 'No aplica',
       oilQuantities: { '20 L': 0, '5 L': 0 },
       oilLevel: 'Alto', // 'Bajo' (rojo) | 'Medio' (naranja) | 'Alto' (verde)
       customOil: '',
@@ -200,6 +203,8 @@ class IndustracApp {
     // Oil type other
     this.oilTypeSelect = document.getElementById('oil-type-select');
     this.customOilGroup = document.getElementById('custom-oil-group');
+    this.oilTypeGroup = document.getElementById('oil-type-group');
+    this.maintenanceTypeGroup = document.getElementById('group-maintenance-type');
   }
 
   initSignatures() {
@@ -314,6 +319,7 @@ class IndustracApp {
     const maintTypeSelect = document.getElementById('maintenance-type-select');
     maintTypeSelect?.addEventListener('change', (e) => {
       this.reportData.maintenanceType = e.target.value;
+      this.updateOilVisibility(e.target.value);
       this.suggestMechanicalTasks(e.target.value);
       this.renderAutoLoadedPartsBox(e.target.value);
       this.handleHoursAutocomplete(e.target.value);
@@ -435,15 +441,28 @@ class IndustracApp {
       });
     });
 
-    // Sync technician selection to signature tech name if empty
+    // Sync technician selection to signature tech name bidirectionally
     const techSelect = document.getElementById('field-technician');
+    const techNameInput = document.getElementById('field-tech-name');
+
     techSelect?.addEventListener('change', (e) => {
       const selectedTech = e.target.value;
-      const techNameInput = document.getElementById('field-tech-name');
-      if (techNameInput && (!techNameInput.value || techNameInput.value === this.reportData.technician)) {
+      this.reportData.technician = selectedTech;
+      this.reportData.techName = selectedTech;
+      if (techNameInput) {
         techNameInput.value = selectedTech;
-        this.reportData.techName = selectedTech;
       }
+      this.triggerAutoSave();
+    });
+
+    techNameInput?.addEventListener('change', (e) => {
+      const selectedTech = e.target.value;
+      this.reportData.techName = selectedTech;
+      this.reportData.technician = selectedTech;
+      if (techSelect) {
+        techSelect.value = selectedTech;
+      }
+      this.triggerAutoSave();
     });
 
     // Equipment and Client catalog events
@@ -517,8 +536,8 @@ class IndustracApp {
     if (tabId === 'tab-history') {
       this.loadReports();
     } else if (tabId === 'tab-equipments') {
-      this.renderClientsList();
-      this.renderEquipmentsCatalog();
+      this.loadClients();
+      this.loadEquipments();
     } else if (tabId === 'tab-plans') {
       this.renderPlansView();
     } else if (tabId === 'tab-horometers') {
@@ -577,10 +596,12 @@ class IndustracApp {
 
     // If reaching step 8 (Firmas), ensure technician name is set and canvases resize to visible dimensions
     if (stepNumber === 8) {
+      const currentTech = this.reportData.technician || document.getElementById('field-technician')?.value || this.reportData.techName || '';
       const techInput = document.getElementById('field-tech-name');
-      if (techInput && !techInput.value && this.reportData.technician) {
-        techInput.value = this.reportData.technician;
-        this.reportData.techName = this.reportData.technician;
+      if (techInput && currentTech) {
+        techInput.value = currentTech;
+        this.reportData.techName = currentTech;
+        this.reportData.technician = currentTech;
       }
       requestAnimationFrame(() => {
         this.techSigPad?.resize();
@@ -673,50 +694,14 @@ class IndustracApp {
       if (!res.ok) throw new Error('Error al consultar /api/clients');
       const serverClients = await res.json();
 
-      let deletedClients = [];
-      try {
-        deletedClients = JSON.parse(localStorage.getItem('industrac_deleted_clients') || '[]');
-      } catch (e) {}
-
-      const filteredServerClients = (serverClients || []).filter(sc => 
-        sc && 
-        !deletedClients.includes(sc.id) && 
-        !(sc.name && deletedClients.includes(sc.name.trim().toLowerCase()))
-      );
-
-      const clientMap = new Map();
-      (this.clients || []).forEach(c => {
-        if (!c || !c.id) return;
-        if (!deletedClients.includes(c.id) && !(c.name && deletedClients.includes(c.name.trim().toLowerCase()))) {
-          clientMap.set(c.id, c);
-        }
-      });
-
-      filteredServerClients.forEach(sc => {
-        if (!sc || !sc.id) return;
-        const existing = clientMap.get(sc.id);
-        if (existing) {
-          const existingTime = new Date(existing.updatedAt || 0).getTime();
-          const serverTime = new Date(sc.updatedAt || 0).getTime();
-          if (existingTime > serverTime) {
-            clientMap.set(sc.id, { ...sc, ...existing });
-          } else {
-            clientMap.set(sc.id, { ...existing, ...sc });
-          }
-        } else {
-          clientMap.set(sc.id, sc);
-        }
-      });
-
-      this.clients = Array.from(clientMap.values());
-      this.persistLocalCatalogCache();
+      this.clients = Array.isArray(serverClients) ? serverClients : [];
       this.recalculateClientCounts();
       this.renderClientsList();
       this.updateCatalogBadges();
       this.populateReportClientSelect();
       this.populateModalClientSelect();
     } catch (err) {
-      console.warn('Error cargando clientes del servidor (usando caché local persistente):', err);
+      console.warn('Error cargando clientes del servidor:', err);
       this.recalculateClientCounts();
       this.renderClientsList();
       this.updateCatalogBadges();
@@ -731,56 +716,13 @@ class IndustracApp {
       if (!res.ok) throw new Error('Error al consultar /api/equipments');
       const serverEquipments = await res.json();
 
-      let deletedIds = [];
-      try {
-        deletedIds = JSON.parse(localStorage.getItem('industrac_deleted_equipments') || '[]');
-      } catch (e) {}
-
-      // Filtrar equipos eliminados localmente
-      const filteredServerEquipments = (serverEquipments || []).filter(se => 
-        se && 
-        !deletedIds.includes(se.id) && 
-        !(se.apiCode && deletedIds.includes(se.apiCode))
-      );
-
-      // Usar equipos existentes en memoria / caché local que no estén marcados como eliminados
-      const eqMap = new Map();
-      (this.equipments || []).forEach(e => {
-        if (!e) return;
-        const key = e.id || e.apiCode;
-        if (key && !deletedIds.includes(e.id) && !(e.apiCode && deletedIds.includes(e.apiCode))) {
-          eqMap.set(key, e);
-        }
-      });
-
-      // Fusión inteligente: si hay cambios locales más recientes, conservarlos
-      filteredServerEquipments.forEach(se => {
-        if (!se) return;
-        const key = se.id || se.apiCode;
-        if (key) {
-          const existing = eqMap.get(key);
-          if (existing) {
-            const existingTime = new Date(existing.updatedAt || 0).getTime();
-            const serverTime = new Date(se.updatedAt || 0).getTime();
-            if (existingTime > serverTime) {
-              eqMap.set(key, { ...se, ...existing });
-            } else {
-              eqMap.set(key, { ...existing, ...se });
-            }
-          } else {
-            eqMap.set(key, se);
-          }
-        }
-      });
-
-      this.equipments = Array.from(eqMap.values());
-      this.persistLocalCatalogCache();
+      this.equipments = Array.isArray(serverEquipments) ? serverEquipments : [];
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
       this.updateCatalogBadges();
       this.syncReportEquipmentSelects();
     } catch (err) {
-      console.warn('Error cargando equipos del servidor (usando caché local persistente):', err);
+      console.warn('Error cargando equipos del servidor:', err);
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
       this.updateCatalogBadges();
@@ -932,7 +874,9 @@ class IndustracApp {
     this.reportData.pressure = (eq.pressure || '').replace(/\s*bar\s*/i, '').trim();
     this.reportData.airflow = (eq.airflow || '').replace(/\s*m³\/min\s*/i, '').trim();
     const rawOil = eq.oilType || 'Ndurance (Presentación 5 L)';
-    this.reportData.oilType = (rawOil === 'NDURANCE') ? 'Ndurance (Presentación 5 L)' : rawOil;
+    const assignedOil = (rawOil === 'NDURANCE') ? 'Ndurance (Presentación 5 L)' : rawOil;
+    this.lastSelectedOilType = assignedOil;
+    this.reportData.oilType = assignedOil;
     this.reportData.customOil = eq.customOil || '';
 
     const eqHours = (eq.hourMeter && eq.hourMeter !== 'Pendiente de completar' && eq.hourMeter !== '0')
@@ -1058,8 +1002,54 @@ class IndustracApp {
     return normalized || type;
   }
 
+  is2000HoursMaintenance(type) {
+    if (!type) return false;
+    const str = String(type).toLowerCase();
+    return str.includes('2000') || str.includes('plan a');
+  }
+
+  updateOilVisibility(maintenanceType) {
+    const is2000 = this.is2000HoursMaintenance(maintenanceType);
+    const oilGroup = document.getElementById('oil-type-group');
+    const maintGroup = document.getElementById('group-maintenance-type');
+    const customOilGroup = document.getElementById('custom-oil-group');
+    const oilSelect = document.getElementById('oil-type-select');
+
+    if (is2000) {
+      if (oilGroup) oilGroup.style.display = 'none';
+      if (maintGroup) maintGroup.classList.add('span-2');
+      if (customOilGroup) customOilGroup.style.display = 'none';
+
+      if (this.reportData.oilType && this.reportData.oilType !== 'No aplica') {
+        this.lastSelectedOilType = this.reportData.oilType;
+      } else if (oilSelect && oilSelect.value && oilSelect.value !== 'No aplica') {
+        this.lastSelectedOilType = oilSelect.value;
+      }
+      this.reportData.oilType = 'No aplica';
+      if (this.reportData.oilQuantities) {
+        this.reportData.oilQuantities = { '20 L': 0, '5 L': 0 };
+      }
+    } else {
+      if (oilGroup) oilGroup.style.display = '';
+      if (maintGroup) maintGroup.classList.remove('span-2');
+
+      if (!this.reportData.oilType || this.reportData.oilType === 'No aplica') {
+        const restored = this.lastSelectedOilType || oilSelect?.value || 'Ndurance (Presentación 5 L)';
+        this.reportData.oilType = restored;
+        if (oilSelect) oilSelect.value = restored;
+      }
+      if (customOilGroup) {
+        const currentVal = oilSelect?.value || this.reportData.oilType;
+        customOilGroup.style.display = (currentVal === 'Otro' || (this.reportData.customOil && this.reportData.customOil.trim())) ? 'flex' : 'none';
+      }
+    }
+  }
+
   getOilBrandName() {
-    const raw = (this.reportData.oilType || document.getElementById('oil-type-select')?.value || '').trim();
+    let raw = (this.reportData.oilType || document.getElementById('oil-type-select')?.value || '').trim();
+    if (!raw || raw === 'No aplica') {
+      raw = (this.lastSelectedOilType || document.getElementById('oil-type-select')?.value || 'Aceite Roto Xtend').trim();
+    }
     if (raw === 'Otro' || (this.reportData.customOil && this.reportData.customOil.trim())) {
       const custom = (this.reportData.customOil || document.getElementById('field-custom-oil')?.value || '').trim();
       return custom ? `Aceite ${custom}` : 'Aceite Personalizado';
@@ -1076,7 +1066,7 @@ class IndustracApp {
     if (/roto\s*-?\s*xtend/i.test(raw)) {
       return 'Aceite Roto Xtend';
     }
-    if (raw) {
+    if (raw && raw !== 'No aplica') {
       const clean = raw.split('(')[0].replace(/^Aceite\s+/i, '').trim();
       return clean ? `Aceite ${clean}` : 'Aceite Lubricante';
     }
@@ -1513,9 +1503,14 @@ class IndustracApp {
     this.reportData.pressure = getValue('field-pressure');
     this.reportData.airflow = getValue('field-airflow');
     this.reportData.hourMeter = getValue('field-hourmeter');
-    this.reportData.oilType = getValue('oil-type-select');
+    if (this.is2000HoursMaintenance(this.reportData.maintenanceType)) {
+      this.reportData.oilType = 'No aplica';
+      this.reportData.customOil = '';
+    } else {
+      this.reportData.oilType = getValue('oil-type-select');
+      this.reportData.customOil = getValue('field-custom-oil');
+    }
     this.reportData.oilLevel = getValue('field-oil-level') || this.reportData.oilLevel || 'Alto';
-    this.reportData.customOil = getValue('field-custom-oil');
 
     // Step 2
     this.reportData.otherMechanicalTasks = getValue('field-other-tasks');
@@ -1636,17 +1631,20 @@ class IndustracApp {
     setVal('field-service-type', this.reportData.serviceType);
     this.reportData.maintenanceType = this.normalizeMaintenanceType(this.reportData.maintenanceType);
     setVal('maintenance-type-select', this.reportData.maintenanceType);
+    this.updateOilVisibility(this.reportData.maintenanceType);
     setVal('field-model', this.reportData.model);
     setVal('field-controller', this.reportData.controller);
     setVal('field-pressure', this.reportData.pressure);
     setVal('field-airflow', this.reportData.airflow);
     setVal('field-hourmeter', this.reportData.hourMeter);
-    setVal('oil-type-select', this.reportData.oilType);
+    if (this.reportData.oilType && this.reportData.oilType !== 'No aplica') {
+      setVal('oil-type-select', this.reportData.oilType);
+    }
     setVal('field-custom-oil', this.reportData.customOil);
     this.updateOilLevelUI(this.reportData.oilLevel || 'Alto');
     this.syncReportEquipmentSelects();
 
-    if (this.customOilGroup) {
+    if (this.customOilGroup && !this.is2000HoursMaintenance(this.reportData.maintenanceType)) {
       this.customOilGroup.style.display = this.reportData.oilType === 'Otro' ? 'flex' : 'none';
     }
 
@@ -1786,14 +1784,16 @@ class IndustracApp {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.reportData)
         });
-        if (!res.ok && (res.status === 404 || res.status === 400)) {
-          // Si PUT falla por ID inexistente en el servidor, reintentar con POST
-          console.warn(`PUT /api/reports/${this.reportData.id} devolvió ${res.status}. Reintentando vía POST...`);
-          res = await fetch('/api/reports', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.reportData)
-          });
+        if (!res.ok) {
+          if (res.status === 404) {
+            // El reporte fue eliminado permanentemente en el servidor; no resucitar
+            console.warn(`Reporte ${this.reportData.id} no existe o fue eliminado en el servidor.`);
+            localStorage.removeItem('industrac_active_draft');
+            this.reportData = this.getEmptyReport();
+            await this.restoreOrCreateDraft();
+            return false;
+          }
+          throw new Error(`Error en actualización de borrador (${res.status})`);
         }
       } else {
         res = await fetch('/api/reports', {
@@ -1849,33 +1849,36 @@ class IndustracApp {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && (parsed.client || parsed.equipmentId)) {
-          // Verify if this draft's reportNumber was already finalized or is an outdated sequence
-          const serverReport = this.reports && this.reports.find(r => (parsed.id && r.id === parsed.id) || r.reportNumber === parsed.reportNumber);
-          const isAlreadyFinalized = serverReport && serverReport.status === 'Finalizado';
-          const isOutdatedDraft = !serverReport && parsed.reportNumber !== freshNextNumber;
-          const isInvalidNumber = !parsed.reportNumber || parsed.reportNumber === 'AUTO' || isAlreadyFinalized || isOutdatedDraft || parsed.status === 'Finalizado';
+          // Si el borrador guardado en localStorage tiene un ID que fue eliminado del servidor, descartarlo
+          const serverReport = this.reports && this.reports.find(r => (parsed.id && r.id === parsed.id) || (parsed.reportNumber && r.reportNumber === parsed.reportNumber));
+          if (parsed.id && !serverReport) {
+            // El reporte fue eliminado permanentemente en el servidor; descartar borrador huérfano
+            localStorage.removeItem('industrac_active_draft');
+          } else {
+            const isAlreadyFinalized = serverReport && serverReport.status === 'Finalizado';
+            const isOutdatedDraft = !serverReport && parsed.reportNumber !== freshNextNumber;
+            const isInvalidNumber = !parsed.reportNumber || parsed.reportNumber === 'AUTO' || isAlreadyFinalized || isOutdatedDraft || parsed.status === 'Finalizado';
 
-          if (isInvalidNumber) {
-            // Assign fresh correlative and start as unfinalized draft
-            parsed.reportNumber = freshNextNumber;
-            parsed.id = null;
-            parsed.status = 'Borrador';
-          }
+            if (isInvalidNumber) {
+              parsed.reportNumber = freshNextNumber;
+              parsed.id = null;
+              parsed.status = 'Borrador';
+            }
 
-          // If the draft was saved on an earlier day or has an old date, update date to today automatically
-          if (!parsed.draftSavedOn || parsed.draftSavedOn !== today || !parsed.date || parsed.date !== today) {
-            parsed.date = today;
+            if (!parsed.draftSavedOn || parsed.draftSavedOn !== today || !parsed.date || parsed.date !== today) {
+              parsed.date = today;
+            }
+            parsed.draftSavedOn = today;
+            if (parsed.maintenanceType) {
+              parsed.maintenanceType = this.normalizeMaintenanceType(parsed.maintenanceType);
+            }
+            this.reportData = parsed;
+            this.syncStateToForm();
+            const numInput = document.getElementById('field-report-number');
+            if (numInput) numInput.value = this.reportData.reportNumber;
+            this.showToast(`Borrador activo: Correlativo N° ${this.reportData.reportNumber}`, 'info');
+            return;
           }
-          parsed.draftSavedOn = today;
-          if (parsed.maintenanceType) {
-            parsed.maintenanceType = this.normalizeMaintenanceType(parsed.maintenanceType);
-          }
-          this.reportData = parsed;
-          this.syncStateToForm();
-          const numInput = document.getElementById('field-report-number');
-          if (numInput) numInput.value = this.reportData.reportNumber;
-          this.showToast(`Borrador activo: Correlativo N° ${this.reportData.reportNumber}`, 'info');
-          return;
         }
       } catch (e) {
         console.warn('Error leyendo borrador local:', e);
@@ -1933,7 +1936,7 @@ class IndustracApp {
           <div class="review-row"><span class="label">Compresor:</span><span class="val">${this.reportData.model || 'N/A'} (API/ID: ${this.reportData.apiCode || this.reportData.serialNumber || 'N/A'})</span></div>
           <div class="review-row"><span class="label">Mantenimiento:</span><span class="val">${this.reportData.maintenanceType}</span></div>
           <div class="review-row"><span class="label">Horómetro:</span><span class="val">${this.reportData.hourMeter || '0'} hrs</span></div>
-          <div class="review-row"><span class="label">Aceite:</span><span class="val">${this.reportData.oilType}</span></div>
+          <div class="review-row"><span class="label">Aceite:</span><span class="val">${this.is2000HoursMaintenance(this.reportData.maintenanceType) || this.reportData.oilType === 'No aplica' ? 'No aplica' : this.reportData.oilType}</span></div>
           <div class="review-row">
             <span class="label">Nivel de Aceite:</span>
             <span class="val">

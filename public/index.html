@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>INDUSTRAC S.A.C. — Sistema Inteligente de Reportes Técnicos</title>
   
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  
   <!-- Modern Industrial Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,14 +24,8 @@
   <header class="app-header">
     <div class="header-container">
       <div class="brand-wrapper">
-        <!-- SVG Corporate Logo: Industrial Compressor Screw & Waves -->
-        <svg class="brand-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="100" height="100" rx="20" fill="#031240" />
-          <!-- Inner Turbine / Screw Chevron -->
-          <path d="M56 26L78 48L56 70L46 60L58 48L46 36L56 26Z" fill="#18A2D9" />
-          <path d="M40 32L58 48L40 64L30 55L39 48L30 41L40 32Z" fill="#14B5D9" />
-          <circle cx="28" cy="28" r="4" fill="#FFFFFF" opacity="0.8" />
-        </svg>
+        <!-- Corporate Logo INDUSTRAC S.A.C. -->
+        <img id="corp-logo-img" src="assets/logo.png" alt="INDUSTRAC S.A.C." class="brand-logo-img" />
         <div class="brand-text">
           <h1>INDUSTRAC <span>S.A.C.</span></h1>
           <p>Compresores de Aire &amp; Servicios Industriales</p>
@@ -307,7 +304,7 @@
               </div>
 
               <!-- Tipo de Mantenimiento -->
-              <div class="form-group">
+              <div class="form-group span-2" id="group-maintenance-type">
                 <label class="form-label label-required" for="maintenance-type-select">Tipo de Mantenimiento</label>
                 <select id="maintenance-type-select" class="form-control" required>
                   <option value="Plan A — 2000 horas" selected>Plan A — 2000 horas</option>
@@ -320,8 +317,8 @@
                 <span class="form-hint">Carga automáticamente los repuestos y tareas en el Paso 2.</span>
               </div>
 
-              <!-- Tipo de Aceite -->
-              <div class="form-group">
+              <!-- Tipo de Aceite (Oculto en Mantenimiento 2000 hrs por no requerir cambio de aceite) -->
+              <div class="form-group" id="oil-type-group" style="display: none;">
                 <label class="form-label" for="oil-type-select">Tipo de Aceite Utilizado</label>
                 <select id="oil-type-select" class="form-control">
                   <option value="Roto Xtend (20 L)">Roto Xtend (Presentación 20 L)</option>
@@ -336,7 +333,7 @@
               </div>
 
               <!-- Criterio de Nivel de Aceite -->
-              <div class="form-group">
+              <div class="form-group" id="group-oil-level">
                 <label class="form-label label-required" for="field-oil-level">
                   Nivel de Aceite
                   <span class="form-hint">(Inspección en visor)</span>
@@ -955,13 +952,13 @@
                   <span id="tech-sig-placeholder" class="canvas-placeholder-text">Dibuje su firma aquí</span>
                 </div>
                 <div class="form-group">
-                  <label class="form-label" for="field-tech-name">Nombre y Registro del Técnico</label>
-                  <input type="text" id="field-tech-name" class="form-control" placeholder="Nombre completo del técnico" list="tech-names-list" />
-                  <datalist id="tech-names-list">
-                    <option value="GINO GREGORIO SILVA CLEMENTE">
-                    <option value="ABEL ELIAS LUNA YSIDRO">
-                    <option value="CARLOS GIOVANNY OJEDA CAMARGO">
-                  </datalist>
+                  <label class="form-label label-required" for="field-tech-name">Nombre y Registro del Técnico</label>
+                  <select id="field-tech-name" class="form-control" required>
+                    <option value="" disabled selected>-- Seleccione Técnico Responsable --</option>
+                    <option value="GINO GREGORIO SILVA CLEMENTE">GINO GREGORIO SILVA CLEMENTE</option>
+                    <option value="ABEL ELIAS LUNA YSIDRO">ABEL ELIAS LUNA YSIDRO</option>
+                    <option value="CARLOS GIOVANNY OJEDA CAMARGO">CARLOS GIOVANNY OJEDA CAMARGO</option>
+                  </select>
                 </div>
               </div>
 
