@@ -306,7 +306,7 @@ class IndustracApp {
 
     const repEquipSelect = document.getElementById('report-equipment-select');
     repEquipSelect?.addEventListener('change', (e) => {
-      if (e.target.value) this.applyEquipment(e.target.value);
+      this.onReportEquipmentChanged(e.target.value);
     });
 
     const toggleClientBtn = document.getElementById('btn-toggle-client-mode');
@@ -772,18 +772,24 @@ class IndustracApp {
     const isCurrentlyManual = input.style.display !== 'none';
     const setManual = forceMode ? forceMode === 'manual' : !isCurrentlyManual;
 
+    // Si ya está en el estado requerido con forceMode explícito, no hacer nada
+    if (setManual === isCurrentlyManual && forceMode !== undefined) {
+      return;
+    }
+
     if (setManual) {
       select.style.display = 'none';
       input.style.display = 'block';
       btn.textContent = '📋 Ver catálogo';
       btn.title = 'Hacer clic para elegir un cliente del catálogo';
-      input.focus();
+      if (!forceMode) input.focus();
     } else {
       input.style.display = 'none';
       select.style.display = 'block';
       btn.textContent = '✏️ Escribir manual';
       btn.title = 'Hacer clic para escribir manualmente un cliente no registrado';
-      if (select.value && select.value !== '__manual__') {
+      // Solo refrescar si el cambio de modo fue por acción manual del usuario (sin forceMode)
+      if (!forceMode && isCurrentlyManual && select.value && select.value !== '__manual__') {
         this.onReportClientChanged(select.value, false);
       }
     }
@@ -828,8 +834,13 @@ class IndustracApp {
       this.reportData.address = client.address || '';
     }
 
-    // Filter equipments belonging to this client
-    const clientEquipments = this.equipments.filter(e => e.clientId === clientId || (client && e.client && e.client.toLowerCase() === client.name.toLowerCase()));
+    // Filter equipments belonging to this client (match by clientId or normalized client name)
+    const clientNameNorm = (client?.name || '').trim().toLowerCase();
+    const clientEquipments = this.equipments.filter(e => {
+      if (e.clientId && e.clientId === clientId) return true;
+      if (clientNameNorm && e.client && e.client.trim().toLowerCase() === clientNameNorm) return true;
+      return false;
+    });
 
     equipSelect.disabled = false;
     if (clientEquipments.length === 0) {
@@ -891,11 +902,14 @@ class IndustracApp {
       if (matchingClient) {
         clientSelect.value = matchingClient.id;
         this.toggleClientInputMode('catalog');
+        this.onReportClientChanged(matchingClient.id, false);
       } else {
         const fieldClient = document.getElementById('field-client');
         if (fieldClient) fieldClient.value = this.reportData.client;
         this.toggleClientInputMode('manual');
       }
+    } else if (clientSelect.value && clientSelect.value !== '__manual__') {
+      this.onReportClientChanged(clientSelect.value, false);
     }
 
     if (!this.reportData.equipmentId && tag) {
