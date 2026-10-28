@@ -145,10 +145,14 @@
             <div class="autofill-two-step">
               <div class="autofill-select-row">
                 <div class="autofill-field">
-                  <label for="report-client-select">1. Seleccionar Cliente:</label>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label for="report-client-select" class="form-label label-required" style="margin-bottom: 0;">1. Compañía o Cliente:</label>
+                    <button type="button" id="btn-toggle-client-mode" class="btn btn-xs" style="background: none; border: none; color: var(--color-primary); font-weight: 600; cursor: pointer; text-decoration: underline; font-size: 0.78rem;" title="Alternar entre seleccionar del catálogo o escribir manualmente">✏️ Escribir manual</button>
+                  </div>
                   <select id="report-client-select" class="form-control">
                     <option value="">-- Elija un Cliente del Catálogo --</option>
                   </select>
+                  <input type="text" id="field-client" class="form-control" placeholder="Ej: ALICORP S.A.A." style="display: none;" required />
                 </div>
                 <div class="autofill-field">
                   <label for="report-equipment-select">2. Seleccionar Compresor:</label>
@@ -219,12 +223,6 @@
                 </select>
               </div>
 
-              <!-- Cliente / Compañía -->
-              <div class="form-group span-2">
-                <label class="form-label label-required" for="field-client">Compañía o Cliente</label>
-                <input type="text" id="field-client" class="form-control" placeholder="Ej: ALICORP S.A.A." required />
-              </div>
-
               <!-- Técnico responsable -->
               <div class="form-group">
                 <label class="form-label label-required" for="field-technician">Ingeniero o Técnico Responsable</label>
@@ -238,7 +236,7 @@
               </div>
 
               <!-- Dirección del servicio -->
-              <div class="form-group span-3">
+              <div class="form-group span-2">
                 <label class="form-label" for="field-address">Dirección del Servicio / Planta</label>
                 <input type="text" id="field-address" class="form-control" placeholder="Ej: Av. Argentina 4793, Callao" />
               </div>

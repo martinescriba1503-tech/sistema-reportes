@@ -309,6 +309,17 @@ class IndustracApp {
       if (e.target.value) this.applyEquipment(e.target.value);
     });
 
+    const toggleClientBtn = document.getElementById('btn-toggle-client-mode');
+    toggleClientBtn?.addEventListener('click', () => {
+      this.toggleClientInputMode();
+    });
+
+    const fieldClientInput = document.getElementById('field-client');
+    fieldClientInput?.addEventListener('input', (e) => {
+      this.reportData.client = e.target.value;
+      this.triggerAutoSave();
+    });
+
     // Fallback equipment quick-select if present
     const equipSelect = document.getElementById('equipment-quick-select');
     equipSelect?.addEventListener('change', (e) => {
@@ -748,19 +759,64 @@ class IndustracApp {
     select.innerHTML = '<option value="">-- Elija un Cliente del Catálogo --</option>' +
       this.clients.map(c => `
         <option value="${c.id}" ${c.id === currentVal ? 'selected' : ''}>${c.name} (${c.equipmentCount || 0} equipos)</option>
-      `).join('');
+      `).join('') +
+      '<option value="__manual__">✏️ Otro / Escribir cliente manual...</option>';
+  }
+
+  toggleClientInputMode(forceMode) {
+    const select = document.getElementById('report-client-select');
+    const input = document.getElementById('field-client');
+    const btn = document.getElementById('btn-toggle-client-mode');
+    if (!select || !input || !btn) return;
+
+    const isCurrentlyManual = input.style.display !== 'none';
+    const setManual = forceMode ? forceMode === 'manual' : !isCurrentlyManual;
+
+    if (setManual) {
+      select.style.display = 'none';
+      input.style.display = 'block';
+      btn.textContent = '📋 Ver catálogo';
+      btn.title = 'Hacer clic para elegir un cliente del catálogo';
+      input.focus();
+    } else {
+      input.style.display = 'none';
+      select.style.display = 'block';
+      btn.textContent = '✏️ Escribir manual';
+      btn.title = 'Hacer clic para escribir manualmente un cliente no registrado';
+      if (select.value && select.value !== '__manual__') {
+        this.onReportClientChanged(select.value, false);
+      }
+    }
   }
 
   onReportClientChanged(clientId, clearEquipment = true) {
     const equipSelect = document.getElementById('report-equipment-select');
     if (!equipSelect) return;
 
-    if (!clientId) {
+    if (clientId === '__manual__') {
+      this.toggleClientInputMode('manual');
+      const fieldClient = document.getElementById('field-client');
+      if (fieldClient) {
+        fieldClient.value = '';
+        this.reportData.client = '';
+      }
       equipSelect.disabled = true;
-      equipSelect.innerHTML = '<option value="">-- Primero elija un cliente --</option>';
+      equipSelect.innerHTML = '<option value="">-- Complete los datos de la máquina abajo --</option>';
       if (clearEquipment) this.clearEquipmentSelection(false);
       return;
     }
+
+    if (!clientId) {
+      equipSelect.disabled = true;
+      equipSelect.innerHTML = '<option value="">-- Primero elija un cliente --</option>';
+      const fieldClient = document.getElementById('field-client');
+      if (fieldClient) fieldClient.value = '';
+      this.reportData.client = '';
+      if (clearEquipment) this.clearEquipmentSelection(false);
+      return;
+    }
+
+    this.toggleClientInputMode('catalog');
 
     const client = this.clients.find(c => c.id === clientId);
     if (client) {
@@ -829,6 +885,19 @@ class IndustracApp {
       }
     }
 
+    // Si hay cliente pero no equipo asociado
+    if (this.reportData.client) {
+      const matchingClient = this.clients.find(c => c.name.toLowerCase() === (this.reportData.client || '').trim().toLowerCase());
+      if (matchingClient) {
+        clientSelect.value = matchingClient.id;
+        this.toggleClientInputMode('catalog');
+      } else {
+        const fieldClient = document.getElementById('field-client');
+        if (fieldClient) fieldClient.value = this.reportData.client;
+        this.toggleClientInputMode('manual');
+      }
+    }
+
     if (!this.reportData.equipmentId && tag) {
       tag.style.display = 'none';
     }
@@ -849,8 +918,12 @@ class IndustracApp {
     if (equipSelect) equipSelect.value = '';
 
     if (clearClient) {
+      this.reportData.client = '';
       const clientSelect = document.getElementById('report-client-select');
       if (clientSelect) clientSelect.value = '';
+      const fieldClient = document.getElementById('field-client');
+      if (fieldClient) fieldClient.value = '';
+      this.toggleClientInputMode('catalog');
       if (equipSelect) {
         equipSelect.disabled = true;
         equipSelect.innerHTML = '<option value="">-- Primero elija un cliente --</option>';
