@@ -11,6 +11,8 @@ package-lock.json
 # Archivos generados
 data/pdfs/*.pdf
 !data/pdfs/.gitkeep
+backup_*/
+
 
 # Archivos del sistema operativo y editores
 .DS_Store

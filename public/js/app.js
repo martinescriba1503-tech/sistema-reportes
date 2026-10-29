@@ -92,11 +92,11 @@ class IndustracApp {
     // Carga inmediata desde almacenamiento local persistente (Anti-borrado en recarga de página)
     this.restoreLocalCatalogCache();
 
-    // Fetch initial data
+    // Fetch initial data deterministically
+    await this.loadPlans();
+    await this.loadClients();
+    await this.loadEquipments();
     await Promise.all([
-      this.loadPlans(),
-      this.loadClients(),
-      this.loadEquipments(),
       this.loadReports(),
       this.loadHorometersData()
     ]);
@@ -649,13 +649,13 @@ class IndustracApp {
       const rawEquipments = localStorage.getItem('industrac_catalog_equipments');
       if (rawClients) {
         const parsed = JSON.parse(rawClients);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           this.clients = parsed;
         }
       }
       if (rawEquipments) {
         const parsedEq = JSON.parse(rawEquipments);
-        if (Array.isArray(parsedEq) && parsedEq.length > 0) {
+        if (Array.isArray(parsedEq)) {
           this.equipments = parsedEq;
         }
       }
@@ -686,14 +686,20 @@ class IndustracApp {
   recalculateClientCounts() {
     if (!this.clients || !Array.isArray(this.clients)) return;
     const equipments = this.equipments || [];
+    const normalize = s => (s || '').toLowerCase().replace(/[\.\s]/g, '');
+
     this.clients.forEach(c => {
       const cId = c.id;
-      const cName = (c.name || '').toLowerCase().trim();
+      const cNorm = normalize(c.name);
       const matched = equipments.filter(e => {
         if (e.clientId && e.clientId === cId) return true;
-        if (e.client && e.client.toLowerCase().trim() === cName) return true;
+        if (cNorm && normalize(e.client) === cNorm) return true;
         return false;
       });
+      // Si equipments aún no cargó y el servidor ya proveyó el conteo, respetarlo
+      if (equipments.length === 0 && c.equipmentCount !== undefined && c.equipmentCount > 0) {
+        return;
+      }
       c.equipmentCount = matched.length;
       c.activeEquipmentCount = matched.filter(e => e.status !== 'Inactivo' && e.active !== false).length;
     });
@@ -706,14 +712,16 @@ class IndustracApp {
       const serverClients = await res.json();
 
       this.clients = Array.isArray(serverClients) ? serverClients : [];
-      this.recalculateClientCounts();
+      this.persistLocalCatalogCache();
+      if (Array.isArray(this.equipments) && this.equipments.length > 0) {
+        this.recalculateClientCounts();
+      }
       this.renderClientsList();
       this.updateCatalogBadges();
       this.populateReportClientSelect();
       this.populateModalClientSelect();
     } catch (err) {
       console.warn('Error cargando clientes del servidor:', err);
-      this.recalculateClientCounts();
       this.renderClientsList();
       this.updateCatalogBadges();
       this.populateReportClientSelect();
@@ -728,15 +736,22 @@ class IndustracApp {
       const serverEquipments = await res.json();
 
       this.equipments = Array.isArray(serverEquipments) ? serverEquipments : [];
+      this.persistLocalCatalogCache();
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
+      this.renderClientsList();
       this.updateCatalogBadges();
+      this.populateReportClientSelect();
+      this.populateModalClientSelect();
       this.syncReportEquipmentSelects();
     } catch (err) {
       console.warn('Error cargando equipos del servidor:', err);
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
+      this.renderClientsList();
       this.updateCatalogBadges();
+      this.populateReportClientSelect();
+      this.populateModalClientSelect();
     }
   }
 
@@ -754,6 +769,12 @@ class IndustracApp {
   populateReportClientSelect() {
     const select = document.getElementById('report-client-select');
     if (!select) return;
+
+    if (!this.clients || this.clients.length === 0) {
+      select.innerHTML = '<option value="">-- Todavía no hay clientes registrados (Registre su primer cliente en el Catálogo) --</option>' +
+        '<option value="__manual__">✏️ Escribir cliente manual...</option>';
+      return;
+    }
 
     const currentVal = select.value;
     select.innerHTML = '<option value="">-- Elija un Cliente del Catálogo --</option>' +
@@ -920,6 +941,7 @@ class IndustracApp {
   clearEquipmentSelection(clearClient = true) {
     this.reportData.equipmentId = '';
     this.reportData.apiCode = '';
+    this.reportData.serialNumber = '';
     const idInput = document.getElementById('field-equipment-id');
     const apiInput = document.getElementById('field-api-code');
     if (idInput) idInput.value = '';
@@ -930,6 +952,9 @@ class IndustracApp {
 
     const equipSelect = document.getElementById('report-equipment-select');
     if (equipSelect) equipSelect.value = '';
+
+    // Restaurar opciones completas oficiales (ambos grupos)
+    this.filterMaintenanceTypeSelectByCycle('all');
 
     if (clearClient) {
       this.reportData.client = '';
@@ -945,14 +970,65 @@ class IndustracApp {
     }
   }
 
+  filterMaintenanceTypeSelectByCycle(cycle) {
+    const maintSelect = document.getElementById('maintenance-type-select');
+    if (!maintSelect) return;
+
+    const currentVal = maintSelect.value;
+    if (cycle === 'ciclo_3000') {
+      maintSelect.innerHTML = `
+        <optgroup label="Grupo 2 Oficial (3.000 / 6.000 / 12.000 h)">
+          <option value="Plan A — 3000 horas">Plan A — 3000 horas</option>
+          <option value="Plan B — 6000 horas">Plan B — 6000 horas</option>
+          <option value="Plan C — 12000 horas">Plan C — 12000 horas</option>
+        </optgroup>
+      `;
+      if (['Plan A — 3000 horas', 'Plan B — 6000 horas', 'Plan C — 12000 horas'].includes(currentVal)) {
+        maintSelect.value = currentVal;
+      } else {
+        maintSelect.value = 'Plan A — 3000 horas';
+        this.reportData.maintenanceType = 'Plan A — 3000 horas';
+      }
+    } else if (cycle === 'ciclo_2000') {
+      maintSelect.innerHTML = `
+        <optgroup label="Grupo 1 Oficial (2.000 / 4.000 / 8.000 h)">
+          <option value="Plan A — 2000 horas">Plan A — 2000 horas</option>
+          <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
+          <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
+        </optgroup>
+      `;
+      if (['Plan A — 2000 horas', 'Plan B — 4000 horas', 'Plan C — 8000 horas'].includes(currentVal)) {
+        maintSelect.value = currentVal;
+      } else {
+        maintSelect.value = 'Plan A — 2000 horas';
+        this.reportData.maintenanceType = 'Plan A — 2000 horas';
+      }
+    } else {
+      maintSelect.innerHTML = `
+        <optgroup label="Grupo 1 Oficial (2.000 / 4.000 / 8.000 h)">
+          <option value="Plan A — 2000 horas">Plan A — 2000 horas</option>
+          <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
+          <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
+        </optgroup>
+        <optgroup label="Grupo 2 Oficial (3.000 / 6.000 / 12.000 h)">
+          <option value="Plan A — 3000 horas">Plan A — 3000 horas</option>
+          <option value="Plan B — 6000 horas">Plan B — 6000 horas</option>
+          <option value="Plan C — 12000 horas">Plan C — 12000 horas</option>
+        </optgroup>
+      `;
+      if (currentVal) maintSelect.value = currentVal;
+    }
+  }
+
   applyEquipment(equipmentId) {
     const eq = this.equipments.find(e => e.id === equipmentId);
     if (!eq) return;
 
-    const apiCodeVal = eq.apiCode || eq.serialNumber || '';
+    const apiCodeVal = eq.apiCode || '';
+    const serialVal = eq.serialNumber || eq.apiCode || '';
     this.reportData.equipmentId = eq.id;
     this.reportData.apiCode = apiCodeVal;
-    this.reportData.serialNumber = apiCodeVal;
+    this.reportData.serialNumber = serialVal;
     this.reportData.client = eq.client || '';
     this.reportData.address = eq.address || '';
     this.reportData.manufacturer = eq.manufacturer || 'Atlas Copco';
@@ -978,6 +1054,10 @@ class IndustracApp {
       this.reportData.dryer.model = eq.dryerModel || '';
       this.reportData.dryer.serialNumber = eq.dryerSerial || '';
     }
+
+    // Filtrar intervalos oficiales de mantenimiento según el programa configurado
+    const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
+    this.filterMaintenanceTypeSelectByCycle(cycle);
 
     // Auto-alinear el tipo de mantenimiento con el próximo plan recomendado del equipo si existe
     const recPlan = eq.nextMaintenance?.plan || eq.nextPlan;
@@ -1862,6 +1942,15 @@ class IndustracApp {
       console.warn('LocalStorage lleno para fotos grandes:', e);
     }
 
+    // Persistencia en servidor: requerir cliente para evitar borradores fantasmas
+    const clientName = (this.reportData.client || '').trim();
+    if (!clientName) {
+      if (showToast) {
+        this.showToast('Borrador guardado localmente en navegador. Seleccione un cliente para sincronizarlo con el servidor.', 'info');
+      }
+      return true;
+    }
+
     // Server persistence
     try {
       let res;
@@ -1918,19 +2007,7 @@ class IndustracApp {
   async restoreOrCreateDraft() {
     const today = getLocalDateString();
 
-    // 1. Fetch fresh next correlative from server
-    let freshNextNumber = 'REP-2026-0001';
-    try {
-      const res = await fetch('/api/next-report-number?peek=true');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.reportNumber) freshNextNumber = data.reportNumber;
-      }
-    } catch (e) {
-      console.warn('Error obteniendo siguiente correlativo:', e);
-    }
-
-    // 2. Check localStorage
+    // 1. Check localStorage for active draft
     const saved = localStorage.getItem('industrac_active_draft');
     if (saved) {
       try {
@@ -1939,19 +2016,8 @@ class IndustracApp {
           // Si el borrador guardado en localStorage tiene un ID que fue eliminado del servidor, descartarlo
           const serverReport = this.reports && this.reports.find(r => (parsed.id && r.id === parsed.id) || (parsed.reportNumber && r.reportNumber === parsed.reportNumber));
           if (parsed.id && !serverReport) {
-            // El reporte fue eliminado permanentemente en el servidor; descartar borrador huérfano
             localStorage.removeItem('industrac_active_draft');
           } else {
-            const isAlreadyFinalized = serverReport && serverReport.status === 'Finalizado';
-            const isOutdatedDraft = !serverReport && parsed.reportNumber !== freshNextNumber;
-            const isInvalidNumber = !parsed.reportNumber || parsed.reportNumber === 'AUTO' || isAlreadyFinalized || isOutdatedDraft || parsed.status === 'Finalizado';
-
-            if (isInvalidNumber) {
-              parsed.reportNumber = freshNextNumber;
-              parsed.id = null;
-              parsed.status = 'Borrador';
-            }
-
             if (!parsed.draftSavedOn || parsed.draftSavedOn !== today || !parsed.date || parsed.date !== today) {
               parsed.date = today;
             }
@@ -1962,8 +2028,10 @@ class IndustracApp {
             this.reportData = parsed;
             this.syncStateToForm();
             const numInput = document.getElementById('field-report-number');
-            if (numInput) numInput.value = this.reportData.reportNumber;
-            this.showToast(`Borrador activo: Correlativo N° ${this.reportData.reportNumber}`, 'info');
+            if (numInput) numInput.value = this.reportData.reportNumber || '';
+            if (this.reportData.reportNumber) {
+              this.showToast(`Borrador activo: Reporte N° ${this.reportData.reportNumber}`, 'info');
+            }
             return;
           }
         }
@@ -1972,13 +2040,13 @@ class IndustracApp {
       }
     }
 
-    // 3. Default suggestions for fresh report
+    // 2. Default suggestions for fresh report (Sin correlativo automático)
     this.reportData = this.getEmptyReport();
-    this.reportData.reportNumber = freshNextNumber;
+    this.reportData.reportNumber = '';
     this.reportData.date = today;
     this.syncStateToForm();
     const numInput = document.getElementById('field-report-number');
-    if (numInput) numInput.value = freshNextNumber;
+    if (numInput) numInput.value = '';
     this.suggestMechanicalTasks('Plan A — 2000 horas');
   }
 
@@ -2168,21 +2236,18 @@ class IndustracApp {
     }
 
     try {
-      this.showToast('Finalizando reporte y asegurando correlativo...', 'info');
+      this.showToast('Finalizando reporte...', 'info');
 
-      // 1. Ensure report has a valid non-AUTO correlative number
-      if (!this.reportData.reportNumber || this.reportData.reportNumber === 'AUTO') {
-        const nextRes = await fetch('/api/next-report-number?peek=false');
-        const nextData = await nextRes.json();
-        this.reportData.reportNumber = nextData.reportNumber;
-        const numInput = document.getElementById('field-report-number');
-        if (numInput) numInput.value = this.reportData.reportNumber;
+      // 1. Obtener número de reporte manual si fue ingresado por el usuario
+      const manualNumInput = document.getElementById('field-report-number');
+      if (manualNumInput) {
+        this.reportData.reportNumber = (manualNumInput.value || '').trim();
       }
 
-      // 2. Mark as Finalizado
+      // 2. Marcar como Finalizado
       this.reportData.status = 'Finalizado';
 
-      // 3. Persist metadata to server first and guarantee correlativo synchronization
+      // 3. Persistir metadatos en servidor
       let savedOk = await this.saveDraft(false);
       if (!savedOk) {
         console.warn('Primer intento de guardado no confirmado en servidor. Reintentando vía POST directo...');
@@ -2410,10 +2475,22 @@ class IndustracApp {
     const list = filteredReports || this.reports;
 
     if (list.length === 0) {
+      const isFiltered = filteredReports !== null && this.reports && this.reports.length > 0;
       tbody.innerHTML = `
         <tr>
-          <td colspan="9" style="text-align: center; padding: 2rem; color: #94A3B8;">
-            No se encontraron reportes registrados.
+          <td colspan="9" style="text-align: center; padding: 3rem 1.5rem; color: #64748B;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
+            <div style="font-weight: 700; color: var(--color-primary-dark); font-size: 1.05rem;">
+              ${isFiltered ? 'No se encontraron reportes con los criterios de búsqueda aplicados.' : 'Todavía no hay reportes registrados.'}
+            </div>
+            ${!isFiltered ? `
+              <p style="font-size: 0.85rem; color: #94A3B8; margin-top: 0.35rem; margin-bottom: 1.25rem;">
+                Genere y finalice un reporte técnico desde la pestaña "Reporte Actual" para comenzar el historial operativo.
+              </p>
+              <button type="button" class="btn btn-primary btn-sm" onclick="window.app.switchTab('report')" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                ＋ Generar Primer Reporte Técnico
+              </button>
+            ` : ''}
           </td>
         </tr>
       `;
@@ -2427,7 +2504,7 @@ class IndustracApp {
 
       return `
         <tr>
-          <td><strong>${rep.reportNumber}</strong></td>
+          <td><strong>${rep.reportNumber || 'S/N'}</strong></td>
           <td>${rep.date ? this.formatDateSpanish(rep.date) : 'N/A'}</td>
           <td>${rep.client || 'Sin cliente'}</td>
           <td>${rep.model || 'N/A'}</td>
@@ -2618,13 +2695,31 @@ class IndustracApp {
     const container = document.getElementById('catalog-clients-list');
     if (!container) return;
 
+    if (!this.clients || this.clients.length === 0) {
+      container.innerHTML = `
+        <div style="padding: 2.25rem 1rem; color: #64748B; font-size: 0.88rem; text-align: center;">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">👥</div>
+          <div style="font-weight: 700; color: var(--color-primary-dark); margin-bottom: 0.35rem; font-size: 0.95rem;">
+            Todavía no hay clientes registrados.
+          </div>
+          <p style="font-size: 0.82rem; margin-bottom: 1.25rem; color: #94A3B8; line-height: 1.4;">
+            Registra tu primer cliente para comenzar.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm" onclick="window.app.openClientModal()" style="margin: 0 auto; display: inline-flex; align-items: center; gap: 0.35rem;">
+            ＋ Registrar Primer Cliente
+          </button>
+        </div>
+      `;
+      return;
+    }
+
     let filtered = this.clients;
     if (this.catalogClientSearch) {
       filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(this.catalogClientSearch));
     }
 
     if (filtered.length === 0) {
-      container.innerHTML = '<div style="padding: 1rem; color: #94A3B8; font-size: 0.85rem; text-align: center;">No se encontraron clientes.</div>';
+      container.innerHTML = '<div style="padding: 1.5rem; color: #94A3B8; font-size: 0.85rem; text-align: center;">No se encontraron clientes bajo la búsqueda.</div>';
       return;
     }
 
@@ -2758,6 +2853,46 @@ class IndustracApp {
     }
 
     if (filtered.length === 0) {
+      if (!this.clients || this.clients.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; padding: 3.5rem 1.5rem; color: #64748B;">
+              <div style="font-size: 2.4rem; margin-bottom: 0.65rem;">🏢</div>
+              <div style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-dark); margin-bottom: 0.4rem;">
+                Primero debe registrar un cliente antes de agregar compresores.
+              </div>
+              <p style="font-size: 0.86rem; color: #64748B; max-width: 520px; margin: 0 auto 1.25rem auto; line-height: 1.45;">
+                Cada compresor debe estar asociado a una empresa cliente. Registre su primer cliente y luego podrá vincular sus compresores y gestionar sus especificaciones técnicas y horómetros.
+              </p>
+              <button type="button" class="btn btn-primary" onclick="window.app.openClientModal()" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                ＋ Registrar Primer Cliente
+              </button>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      if (!this.equipments || this.equipments.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; padding: 3.5rem 1.5rem; color: #64748B;">
+              <div style="font-size: 2.4rem; margin-bottom: 0.65rem;">⚙️</div>
+              <div style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-dark); margin-bottom: 0.4rem;">
+                Todavía no hay compresores registrados.
+              </div>
+              <p style="font-size: 0.86rem; color: #64748B; max-width: 520px; margin: 0 auto 1.25rem auto; line-height: 1.45;">
+                Registre su primer compresor vinculado a un cliente para gestionar sus fichas técnicas, horómetros y programas de mantenimiento.
+              </p>
+              <button type="button" class="btn btn-primary" onclick="window.app.openEquipmentModal()" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                ＋ Registrar Primer Compresor
+              </button>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
       const isSpecificClient = this.selectedClientId && this.selectedClientId !== 'all';
       const clientObj = isSpecificClient ? this.clients.find(c => c.id === this.selectedClientId) : null;
       const clientName = clientObj ? clientObj.name : '';
@@ -2954,6 +3089,12 @@ class IndustracApp {
 
   // --- MODAL: REGISTRAR / EDITAR EQUIPO ---
   openEquipmentModal(equipmentId = null) {
+    if (!equipmentId && (!this.clients || this.clients.length === 0)) {
+      alert('Primero es necesario registrar al menos un cliente en el Catálogo antes de registrar un compresor.');
+      this.openClientModal();
+      return;
+    }
+
     const modal = document.getElementById('equipment-modal');
     if (!modal) return;
 
@@ -3437,7 +3578,7 @@ class IndustracApp {
   async loadDemoData() {}
   async clearDemoData() {}
 
-  // --- ADMINISTRACIÓN DE PLANES DE MANTENIMIENTO ---
+  // --- ADMINISTRACIÓN DE PLANES DE MANTENIMIENTO: ÚNICAMENTE SEIS INTERVALOS OFICIALES ---
   renderPlansView() {
     const container = document.getElementById('plans-view-container');
     if (!container || !this.plans) return;
@@ -3445,78 +3586,101 @@ class IndustracApp {
     const defaultPlans = this.plans.defaultPlans || {};
     const allTasks = this.plans.allTasks || [];
 
-    // Filter alias numeric keys (e.g., '2000 horas') to only display official named plans
-    const visibleKeys = Object.keys(defaultPlans).filter(k => !/^\d+\s*horas$/.test(k));
+    // Los únicos 6 intervalos oficiales autorizados organizados en sus 2 grupos
+    const group1Keys = ['Plan A — 2000 horas', 'Plan B — 4000 horas', 'Plan C — 8000 horas'];
+    const group2Keys = ['Plan A — 3000 horas', 'Plan B — 6000 horas', 'Plan C — 12000 horas'];
+
+    const renderCard = (planKey) => {
+      const plan = defaultPlans[planKey] || {};
+      const autoItems = plan.autoLoadItems || [];
+      const tasks = plan.suggestedTasks || [];
+
+      const autoItemsHtml = autoItems.length > 0 ? `
+        <div style="margin-top: 0.35rem;">
+          <div class="plan-section-title">
+            <span>📦</span> Cargar automáticamente:
+          </div>
+          <div class="plan-auto-items-list">
+            ${autoItems.map(item => `
+              <div class="plan-auto-item-row">
+                <span>• ${item}</span>
+                <span style="color: #10B981; font-size: 0.75rem; font-weight: 700;">✓ Auto</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : `
+        <div style="margin-top: 0.35rem;">
+          <div class="plan-section-title">
+            <span>📦</span> Cargar automáticamente:
+          </div>
+          <div style="color: #94A3B8; font-size: 0.82rem; font-style: italic; padding: 0.5rem;">
+            (Selección de tareas e insumos según servicio)
+          </div>
+        </div>
+      `;
+
+      const tasksHtml = tasks.length > 0 ? `
+        <div style="margin-top: 0.65rem;">
+          <div class="plan-section-title">
+            <span>🔧</span> Protocolo Técnico y Tareas Asociadas:
+          </div>
+          <div class="plan-tasks-tags">
+            ${tasks.map(tId => {
+              const found = allTasks.find(t => t.id === tId);
+              return `<span class="plan-task-pill">✓ ${found ? found.name : tId}</span>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : '';
+
+      const hoursBadge = plan.hours ? `<span class="plan-hours-badge">${plan.hours.toLocaleString()} hrs</span>` : '';
+
+      return `
+        <div class="plan-admin-card featured">
+          <div class="plan-card-header">
+            <div class="plan-card-title-group">
+              <h3>⚙️ ${planKey}</h3>
+              <p>${plan.description || ''}</p>
+            </div>
+            ${hoursBadge}
+          </div>
+
+          ${autoItemsHtml}
+          ${tasksHtml}
+
+          <div class="plan-card-footer">
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.app.applyPlanToNewReport('${planKey}')">
+              🚀 Aplicar este Plan al Reporte
+            </button>
+          </div>
+        </div>
+      `;
+    };
 
     container.innerHTML = `
-      <div class="plans-admin-grid">
-        ${visibleKeys.map(planKey => {
-          const plan = defaultPlans[planKey];
-          const autoItems = plan.autoLoadItems || [];
-          const tasks = plan.suggestedTasks || [];
+      <div style="margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 2px solid #E2E8F0; padding-bottom: 0.5rem;">
+          <h3 style="color: var(--color-primary-dark); font-size: 1.05rem; font-weight: 700;">
+            🔵 Grupo 1: Intervalos de 2.000, 4.000 y 8.000 horas
+          </h3>
+          <span class="badge" style="background: #E0F2FE; color: #0369A1; font-weight: 700;">Ciclo Estándar</span>
+        </div>
+        <div class="plans-admin-grid">
+          ${group1Keys.map(k => renderCard(k)).join('')}
+        </div>
+      </div>
 
-          const autoItemsHtml = autoItems.length > 0 ? `
-            <div style="margin-top: 0.35rem;">
-              <div class="plan-section-title">
-                <span>📦</span> Cargar automáticamente:
-              </div>
-              <div class="plan-auto-items-list">
-                ${autoItems.map(item => `
-                  <div class="plan-auto-item-row">
-                    <span>• ${item}</span>
-                    <span style="color: #10B981; font-size: 0.75rem; font-weight: 700;">✓ Auto</span>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          ` : `
-            <div style="margin-top: 0.35rem;">
-              <div class="plan-section-title">
-                <span>📦</span> Cargar automáticamente:
-              </div>
-              <div style="color: #94A3B8; font-size: 0.82rem; font-style: italic; padding: 0.5rem;">
-                (Selección libre según servicio en campo)
-              </div>
-            </div>
-          `;
-
-          const tasksHtml = tasks.length > 0 ? `
-            <div style="margin-top: 0.65rem;">
-              <div class="plan-section-title">
-                <span>🔧</span> Protocolo Técnico y Tareas Asociadas:
-              </div>
-              <div class="plan-tasks-tags">
-                ${tasks.map(tId => {
-                  const found = allTasks.find(t => t.id === tId);
-                  return `<span class="plan-task-pill">✓ ${found ? found.name : tId}</span>`;
-                }).join('')}
-              </div>
-            </div>
-          ` : '';
-
-          const hoursBadge = plan.hours ? `<span class="plan-hours-badge">${plan.hours.toLocaleString()} hrs</span>` : '';
-
-          return `
-            <div class="plan-admin-card ${planKey.startsWith('Plan') ? 'featured' : ''}">
-              <div class="plan-card-header">
-                <div class="plan-card-title-group">
-                  <h3>⚙️ ${planKey}</h3>
-                  <p>${plan.description || ''}</p>
-                </div>
-                ${hoursBadge}
-              </div>
-
-              ${autoItemsHtml}
-              ${tasksHtml}
-
-              <div class="plan-card-footer">
-                <button type="button" class="btn btn-primary btn-sm" onclick="window.app.applyPlanToNewReport('${planKey}')">
-                  🚀 Aplicar este Plan al Reporte
-                </button>
-              </div>
-            </div>
-          `;
-        }).join('')}
+      <div style="margin-top: 2rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 2px solid #E2E8F0; padding-bottom: 0.5rem;">
+          <h3 style="color: var(--color-primary-dark); font-size: 1.05rem; font-weight: 700;">
+            🟢 Grupo 2: Intervalos de 3.000, 6.000 y 12.000 horas
+          </h3>
+          <span class="badge" style="background: #ECFDF5; color: #047857; font-weight: 700;">Ciclo Especial</span>
+        </div>
+        <div class="plans-admin-grid">
+          ${group2Keys.map(k => renderCard(k)).join('')}
+        </div>
       </div>
     `;
   }
@@ -3837,6 +4001,17 @@ class IndustracApp {
     const list = this.horometersPriorityList || [];
     if (badge) badge.textContent = list.length;
 
+    if (!this.equipments || this.equipments.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state-card" style="padding: 2.5rem 1rem; text-align: center; color: var(--color-text-muted); background: #F8FAFC; border-radius: 8px; border: 1px dashed var(--color-border);">
+          <span style="font-size: 2rem;">⏱️</span>
+          <h4 style="margin: 0.5rem 0 0.2rem; color: #031240;">Sin equipos registrados</h4>
+          <p style="font-size: 0.82rem; margin: 0;">Registre compresores en el Catálogo para comenzar el monitoreo de alertas de mantenimiento.</p>
+        </div>
+      `;
+      return;
+    }
+
     if (list.length === 0) {
       container.innerHTML = `
         <div class="empty-state-card" style="padding: 2.5rem 1rem; text-align: center; color: var(--color-text-muted); background: #F8FAFC; border-radius: 8px; border: 1px dashed var(--color-border);">
@@ -4089,7 +4264,7 @@ class IndustracApp {
         if (emptyMsg) {
           emptyMsg.textContent = this.horometerSearch
             ? `No se encontraron equipos para la búsqueda "${this.horometerSearch}".`
-            : 'No hay equipos registrados para mostrar.';
+            : 'Todavía no hay compresores en seguimiento de horómetros. Registre compresores en el Catálogo para comenzar.';
         }
       } else {
         emptyEl.style.display = 'none';

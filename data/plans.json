@@ -21,7 +21,9 @@
     "Plan A — 2000 horas": {
       "name": "Plan A — 2000 horas",
       "hours": 2000,
-      "description": "Plan preventivo estándar de 2000 horas: Reemplazo de filtros primarios de lubricante y admisión.",
+      "group": "Grupo 1 (2.000 / 4.000 / 8.000 h)",
+      "cycleType": "ciclo_2000",
+      "description": "Mantenimiento preventivo de 2.000 horas: Reemplazo de filtros primarios de aceite y admisión.",
       "autoLoadItems": [
         "1 Filtro de Aceite",
         "1 Filtro de Aire"
@@ -34,7 +36,9 @@
     "Plan B — 4000 horas": {
       "name": "Plan B — 4000 horas",
       "hours": 4000,
-      "description": "Plan intermedio de 4000 horas: Filtración completa y cambio de lubricante sintético.",
+      "group": "Grupo 1 (2.000 / 4.000 / 8.000 h)",
+      "cycleType": "ciclo_2000",
+      "description": "Mantenimiento intermedio de 4.000 horas: Filtración completa y cambio de lubricante sintético.",
       "oilType": "Roto Xtend (20 L)",
       "oilPresentations": ["5 L", "20 L"],
       "autoLoadItems": [
@@ -53,7 +57,9 @@
     "Plan C — 8000 horas": {
       "name": "Plan C — 8000 horas",
       "hours": 8000,
-      "description": "Plan integral de 8000 horas: Filtración total, lubricante y reemplazo preventivo de kits de válvulas y drenajes.",
+      "group": "Grupo 1 (2.000 / 4.000 / 8.000 h)",
+      "cycleType": "ciclo_2000",
+      "description": "Mantenimiento integral mayor de 8.000 horas: Filtración total, lubricante y reemplazo preventivo de kits de válvulas y drenajes.",
       "oilType": "Roto Xtend (20 L)",
       "oilPresentations": ["5 L", "20 L"],
       "autoLoadItems": [
@@ -75,55 +81,60 @@
         "kits_drenaje_ld20"
       ]
     },
-    "Overhaul": {
-      "name": "Overhaul",
-      "description": "Reacondicionamiento general mayor del compresor y componentes dinámicos.",
+    "Plan A — 3000 horas": {
+      "name": "Plan A — 3000 horas",
+      "hours": 3000,
+      "group": "Grupo 2 (3.000 / 6.000 / 12.000 h)",
+      "cycleType": "ciclo_3000",
+      "description": "Mantenimiento preventivo de 3.000 horas: Reemplazo de filtros de aceite y admisión.",
+      "autoLoadItems": [
+        "1 Filtro de Aceite",
+        "1 Filtro de Aire"
+      ],
+      "suggestedTasks": [
+        "filtro_aceite",
+        "filtro_aire"
+      ]
+    },
+    "Plan B — 6000 horas": {
+      "name": "Plan B — 6000 horas",
+      "hours": 6000,
+      "group": "Grupo 2 (3.000 / 6.000 / 12.000 h)",
+      "cycleType": "ciclo_3000",
+      "description": "Mantenimiento intermedio de 6.000 horas: Filtración completa y cambio de lubricante sintético.",
+      "oilType": "Sigma 5GAL",
+      "oilPresentations": ["1 GAL", "5 GAL"],
       "autoLoadItems": [
         "1 Filtro de Aceite",
         "1 Filtro de Aire",
         "1 Filtro Separador",
-        "Aceite Roto Xtend (5 L / 20 L)",
-        "Kit de válvula termostática",
-        "Kit de válvula de mínima presión",
-        "Kits de drenaje LD20",
-        "Mantenimiento de válvula de admisión"
+        "Aceite Sigma 5GAL"
       ],
       "suggestedTasks": [
         "filtro_aceite",
         "filtro_aire",
         "filtro_separador",
-        "cambio_aceite",
-        "valvula_termostatica",
-        "valvula_minima_presion",
-        "kits_drenaje_ld20",
-        "valvula_admision",
-        "limpieza_enfriador",
-        "lavado_quimico_enfriador",
-        "ajuste_tablero"
+        "cambio_aceite"
       ]
     },
-    "Correctivo": {
-      "name": "Correctivo",
-      "description": "Servicio correctivo bajo demanda. Selección de tareas e insumos libre en campo.",
-      "autoLoadItems": [],
-      "suggestedTasks": []
-    },
-    "Otro": {
-      "name": "Otro",
-      "description": "Servicio especial, evaluación técnica o auditoría.",
-      "autoLoadItems": [],
-      "suggestedTasks": []
-    }
-  },
-  "customModelPlans": {
-    "Atlas Copco GA 37 VSD+": {
-      "Plan B — 4000 horas": [
-        "filtro_aceite",
-        "filtro_aire",
-        "filtro_separador",
-        "cambio_aceite"
+    "Plan C — 12000 horas": {
+      "name": "Plan C — 12000 horas",
+      "hours": 12000,
+      "group": "Grupo 2 (3.000 / 6.000 / 12.000 h)",
+      "cycleType": "ciclo_3000",
+      "description": "Mantenimiento mayor de 12.000 horas: Filtración total, lubricante y reemplazo de kits de válvulas operativas y drenaje.",
+      "oilType": "Sigma 5GAL",
+      "oilPresentations": ["1 GAL", "5 GAL"],
+      "autoLoadItems": [
+        "1 Filtro de Aceite",
+        "1 Filtro de Aire",
+        "1 Filtro Separador",
+        "Aceite Sigma 5GAL",
+        "Kit de válvula termostática",
+        "Kit de válvula de mínima presión",
+        "Kits de drenaje LD20"
       ],
-      "Plan C — 8000 horas": [
+      "suggestedTasks": [
         "filtro_aceite",
         "filtro_aire",
         "filtro_separador",

@@ -1,69 +1,11 @@
 [
   {
-    "id": "cli-1791815549534",
-    "name": "FORSAC S.A.C",
-    "address": "Av. Gerardo Unger Nro. 5339 (Urbanización Industrial Infantas) - Los Olivos",
-    "contact": "MENESES",
-    "notes": "",
-    "isDemo": false,
-    "createdAt": "2026-10-12T14:32:29.535Z"
-  },
-  {
-    "id": "cli-1792171464139",
+    "id": "cli-1793290742051",
     "name": "EMUSA S.A.C",
     "address": "Jr. Pacto Andino Nº 124, Urb. La Villa, Chorrillos, Lima, Perú.",
     "contact": "VICTOR MEJIA",
-    "notes": "Plantas: Planta Comunidad y Planta 1 (6 compresores registrados).",
+    "notes": "",
     "isDemo": false,
-    "createdAt": "2026-10-16T17:24:24.140Z"
-  },
-  {
-    "id": "cli-cientifica-sur",
-    "name": "Científica del Sur",
-    "address": "Campus Villa El Salvador, Lima",
-    "contact": "Dpto. Infraestructura y Laboratorios",
-    "notes": "Cliente registrado en catálogo INDUSTRAC.",
-    "isDemo": false,
-    "createdAt": "2026-10-27T10:00:00.000Z"
-  },
-  {
-    "id": "cli-1793121825312",
-    "name": "CLIENTE PRUEBA CASO 2",
-    "address": "",
-    "contact": "",
-    "notes": "",
-    "isDemo": false
-  },
-  {
-    "id": "cli-1793121830845",
-    "name": "CLIENTE PRUEBA CASO 3",
-    "address": "",
-    "contact": "",
-    "notes": "",
-    "isDemo": false
-  },
-  {
-    "id": "cli-1793121835190",
-    "name": "CLIENTE PRUEBA CASO 4",
-    "address": "",
-    "contact": "",
-    "notes": "",
-    "isDemo": false
-  },
-  {
-    "id": "cli-1793121839342",
-    "name": "CLIENTE PRUEBA CASO 5",
-    "address": "",
-    "contact": "",
-    "notes": "",
-    "isDemo": false
-  },
-  {
-    "id": "cli-1793121844347",
-    "name": "CLIENTE PRUEBA CASO 6",
-    "address": "",
-    "contact": "",
-    "notes": "",
-    "isDemo": false
+    "createdAt": "2026-10-29T16:19:02.200Z"
   }
 ]

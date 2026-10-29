@@ -189,24 +189,15 @@ app.post('/api/reports', (req, res) => {
     const reports = readJson(REPORTS_FILE, []);
     const reportData = req.body;
 
-    // Check or generate unique reportNumber
-    let reportNumber = reportData.reportNumber;
-    const exists = reports.find(r => r.reportNumber === reportNumber && r.id !== reportData.id);
+    const clientName = (reportData.client || '').trim();
+    if (!clientName) {
+      return res.status(400).json({ error: 'El nombre del cliente es obligatorio para registrar o guardar un reporte.' });
+    }
 
-    if (!reportNumber || reportNumber === 'AUTO' || reportNumber.trim() === '' || exists) {
-      reportNumber = getNextReportNumber(false);
-    } else {
-      // Ensure counter sequence is at least this number
-      const currentYear = new Date().getFullYear();
-      const match = String(reportNumber).match(new RegExp(`^REP-${currentYear}-(\\d+)$`));
-      if (match) {
-        const seq = parseInt(match[1], 10);
-        const counter = readJson(COUNTER_FILE, { prefix: 'REP', year: currentYear, lastSequence: 0 });
-        if (seq > counter.lastSequence) {
-          counter.lastSequence = seq;
-          writeJson(COUNTER_FILE, counter);
-        }
-      }
+    // Número de Reporte / Cotización (Manual / Opcional - Sin correlativo automático forzado)
+    let reportNumber = (reportData.reportNumber || '').trim();
+    if (reportNumber === 'AUTO' || reportNumber.startsWith('REP-2026-...')) {
+      reportNumber = '';
     }
 
     const newReport = {
@@ -245,16 +236,16 @@ app.put('/api/reports/:id', (req, res) => {
     }
 
     const current = reports[index];
-    let validReportNumber = current.reportNumber;
-    if (!validReportNumber || validReportNumber === 'AUTO' || validReportNumber.trim() === '') {
-      validReportNumber = getNextReportNumber(false);
+    let validReportNumber = (req.body.reportNumber !== undefined ? req.body.reportNumber : (current.reportNumber || '')).trim();
+    if (validReportNumber === 'AUTO' || validReportNumber.startsWith('REP-2026-...')) {
+      validReportNumber = '';
     }
 
     const updated = {
       ...current,
       ...req.body,
       id: current.id, // Immutable ID
-      reportNumber: validReportNumber, // Immutable once assigned
+      reportNumber: validReportNumber,
       updatedAt: new Date().toISOString()
     };
     reports[index] = updated;
@@ -543,8 +534,15 @@ app.get('/api/clients', (req, res) => {
   const clients = readJson(CLIENTS_FILE, []);
   const equipments = readJson(EQUIPMENTS_FILE, []);
 
+  const normalize = (str) => (str || '').toLowerCase().replace(/[\.\s]/g, '');
+
   const clientsWithStats = clients.map(c => {
-    const matchedEquipments = equipments.filter(e => e.clientId === c.id || e.client?.toLowerCase() === c.name.toLowerCase());
+    const cNorm = normalize(c.name);
+    const matchedEquipments = equipments.filter(e => {
+      if (e.clientId && e.clientId === c.id) return true;
+      if (cNorm && normalize(e.client) === cNorm) return true;
+      return false;
+    });
     const activeCount = matchedEquipments.filter(e => e.status !== 'Inactivo' && e.active !== false).length;
     return {
       ...c,
@@ -1266,9 +1264,10 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   }
 
   const hoursRemaining = nextMilestone !== null ? (nextMilestone - currentHours) : null;
+  // Regla estricta: calcular fecha trimestral ÚNICAMENTE a partir de un mantenimiento o lectura real válida, jamás de la fecha de creación del registro
   const quarterlyEstimatedDate = lastMaintDate 
     ? addCalendarMonths(lastMaintDate, 3) 
-    : (lastReadingDate ? addCalendarMonths(lastReadingDate, 3) : (equipment.createdAt ? addCalendarMonths(equipment.createdAt, 3) : null));
+    : (lastReadingDate ? addCalendarMonths(lastReadingDate, 3) : null);
 
   let usageEstimatedDate = null;
   const monthlyAvg = Number(equipment.monthlyAverageHours) || 0;
@@ -1514,9 +1513,9 @@ function applyReportToEquipmentHorometer(report) {
     eq.readingsHistory.unshift(histEntry);
   }
 
-  // Regla de negocio: Actualizar horómetro actual si la lectura es válida y no es una fecha más antigua
+  // Regla de negocio: Actualizar horómetro actual si la lectura es válida, igual o superior a la actual y no es una fecha más antigua
   let horometerUpdated = false;
-  if (validHour && (!isOlderDate || repHourMeter >= currentEqHours)) {
+  if (validHour && repHourMeter >= currentEqHours && !isOlderDate) {
     eq.hourMeter = String(repHourMeter);
     eq.hours = repHourMeter;
     eq.lastReadingDate = repDate;

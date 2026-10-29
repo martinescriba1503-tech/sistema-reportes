@@ -197,18 +197,13 @@
                 <input type="date" id="field-date" class="form-control" required />
               </div>
 
-              <!-- N° de Reporte / Cotización -->
+              <!-- N° de Reporte / Cotización (Manual / Opcional) -->
               <div class="form-group">
-                <label class="form-label label-required" for="field-report-number">
+                <label class="form-label" for="field-report-number">
                   Número de Reporte / Cotización
-                  <span class="form-hint" style="color: var(--color-primary); font-weight: 600;">(Correlativo Automático)</span>
+                  <span class="form-hint" style="color: var(--color-text-muted); font-weight: normal;">(Opcional / Manual)</span>
                 </label>
-                <div style="position: relative;">
-                  <input type="text" id="field-report-number" class="form-control" value="REP-2026-..." readonly style="background-color: #F8FAFC; font-weight: 700; color: #0F172A; letter-spacing: 0.5px; border-color: #CBD5E1; cursor: not-allowed; padding-right: 85px;" />
-                  <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 0.72rem; background: #EEF2FF; color: #4338CA; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #C7D2FE;">
-                    🔒 OFICIAL
-                  </span>
-                </div>
+                <input type="text" id="field-report-number" class="form-control" placeholder="Ej: REP-001, COT-105 o dejar en blanco" style="font-weight: 600;" />
               </div>
 
               <!-- Tipo de Servicio -->
@@ -306,12 +301,16 @@
               <div class="form-group span-2" id="group-maintenance-type">
                 <label class="form-label label-required" for="maintenance-type-select">Tipo de Mantenimiento</label>
                 <select id="maintenance-type-select" class="form-control" required>
-                  <option value="Plan A — 2000 horas" selected>Plan A — 2000 horas</option>
-                  <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
-                  <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
-                  <option value="Overhaul">Overhaul</option>
-                  <option value="Correctivo">Correctivo</option>
-                  <option value="Otro">Otro</option>
+                  <optgroup label="Grupo 1 (Ciclo 2.000 / 4.000 / 8.000 h)">
+                    <option value="Plan A — 2000 horas" selected>Plan A — 2000 horas</option>
+                    <option value="Plan B — 4000 horas">Plan B — 4000 horas</option>
+                    <option value="Plan C — 8000 horas">Plan C — 8000 horas</option>
+                  </optgroup>
+                  <optgroup label="Grupo 2 (Ciclo 3.000 / 6.000 / 12.000 h)">
+                    <option value="Plan A — 3000 horas">Plan A — 3000 horas</option>
+                    <option value="Plan B — 6000 horas">Plan B — 6000 horas</option>
+                    <option value="Plan C — 12000 horas">Plan C — 12000 horas</option>
+                  </optgroup>
                 </select>
                 <span class="form-hint">Carga automáticamente los repuestos y tareas en el Paso 2.</span>
               </div>
@@ -1111,7 +1110,7 @@
         <aside class="catalog-sidebar">
           <div class="catalog-sidebar-header">
             <span class="catalog-sidebar-title">Clientes Registrados</span>
-            <span id="catalog-clients-badge" class="badge" style="background: #E2E8F0; color: #334155;">10</span>
+            <span id="catalog-clients-badge" class="badge" style="background: #E2E8F0; color: #334155;">0</span>
           </div>
 
           <!-- Client Search -->
@@ -1127,7 +1126,7 @@
           >
             <div class="client-card-top">
               <span class="client-card-name">🌐 Todos los Clientes</span>
-              <span class="badge" id="catalog-total-equipments-badge" style="background: #031240; color: white;">20</span>
+              <span class="badge" id="catalog-total-equipments-badge" style="background: #031240; color: white;">0</span>
             </div>
             <div class="client-card-counts">
               <span>Vista global de todo el parque</span>

@@ -7,6 +7,7 @@ const path = require('path');
 const BASE_URL = 'http://localhost:3000';
 const EQUIPMENTS_FILE = path.join(__dirname, 'data', 'equipments.json');
 const REPORTS_FILE = path.join(__dirname, 'data', 'reports.json');
+const CLIENTS_FILE = path.join(__dirname, 'data', 'clients.json');
 
 async function runTests() {
   console.log('================================================================');
@@ -19,6 +20,7 @@ async function runTests() {
   // Snapshot original files to ensure complete isolation and zero corruption
   const originalEquipments = fs.readFileSync(EQUIPMENTS_FILE, 'utf8');
   const originalReports = fs.readFileSync(REPORTS_FILE, 'utf8');
+  const originalClients = fs.readFileSync(CLIENTS_FILE, 'utf8');
 
   try {
     // -------------------------------------------------------------
@@ -392,6 +394,7 @@ async function runTests() {
     // Restaurar los archivos JSON a su estado limpio original
     fs.writeFileSync(EQUIPMENTS_FILE, originalEquipments, 'utf8');
     fs.writeFileSync(REPORTS_FILE, originalReports, 'utf8');
+    fs.writeFileSync(CLIENTS_FILE, originalClients, 'utf8');
     console.log('\n🧹 Archivos JSON restaurados a su estado original para preservar la integridad de producción.');
   }
 
