@@ -357,7 +357,7 @@ class IndustracApp {
         if (typeof dateInput.showPicker === 'function') {
           try {
             dateInput.showPicker();
-          } catch (e) {}
+          } catch (e) { }
         }
       });
       dateInput.addEventListener('change', (e) => {
@@ -1252,7 +1252,7 @@ class IndustracApp {
       const is5LOnly = (rawLower.includes('5 l') || rawLower.includes('1gal')) && !rawLower.includes('20') && !rawLower.includes('5gal');
 
       if (!this.reportData.oilQuantities || (this.reportData.oilQuantities['20 L'] === 0 && this.reportData.oilQuantities['5 L'] === 0)) {
-        this.reportData.oilQuantities = is5LOnly 
+        this.reportData.oilQuantities = is5LOnly
           ? { '20 L': 0, '5 L': 1 }
           : { '20 L': 1, '5 L': 0 };
 
@@ -1582,7 +1582,7 @@ class IndustracApp {
     if (inputHidden) inputHidden.value = level;
     this.updateOilLevelUI(level);
     this.triggerAutoSave();
-    
+
     let emoji = '🟢';
     if (level === 'Bajo') emoji = '🔴';
     if (level === 'Medio') emoji = '🟠';
@@ -1930,71 +1930,22 @@ class IndustracApp {
     }, 1200);
   }
 
-  async saveDraft(showToast = true) {
+  saveDraft(showToast = false) {
     this.syncFormToState();
     this.reportData.draftSavedOn = getLocalDateString();
-    this.reportData.status = this.reportData.status === 'Finalizado' ? 'Finalizado' : 'Borrador';
+    this.reportData.status = 'Borrador';
 
-    // Local storage instant cache
+    // Local storage instant cache (Estrictamente local en el navegador del operador)
     try {
       localStorage.setItem('industrac_active_draft', JSON.stringify(this.reportData));
-    } catch (e) {
-      console.warn('LocalStorage lleno para fotos grandes:', e);
-    }
-
-    // Persistencia en servidor: requerir cliente para evitar borradores fantasmas
-    const clientName = (this.reportData.client || '').trim();
-    if (!clientName) {
+      this.updateSyncStatus('Borrador guardado localmente');
       if (showToast) {
-        this.showToast('Borrador guardado localmente en navegador. Seleccione un cliente para sincronizarlo con el servidor.', 'info');
+        this.showToast('Borrador guardado en la memoria de este navegador.', 'info');
       }
       return true;
-    }
-
-    // Server persistence
-    try {
-      let res;
-      if (this.reportData.id) {
-        res = await fetch(`/api/reports/${this.reportData.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.reportData)
-        });
-        if (!res.ok) {
-          if (res.status === 404) {
-            // El reporte fue eliminado permanentemente en el servidor; no resucitar
-            console.warn(`Reporte ${this.reportData.id} no existe o fue eliminado en el servidor.`);
-            localStorage.removeItem('industrac_active_draft');
-            this.reportData = this.getEmptyReport();
-            await this.restoreOrCreateDraft();
-            return false;
-          }
-          throw new Error(`Error en actualización de borrador (${res.status})`);
-        }
-      } else {
-        res = await fetch('/api/reports', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.reportData)
-        });
-      }
-
-      if (res.ok) {
-        const saved = await res.json();
-        this.reportData.id = saved.id;
-        this.reportData.reportNumber = saved.reportNumber;
-        document.getElementById('field-report-number').value = saved.reportNumber;
-
-        this.updateSyncStatus('Guardado en servidor');
-        if (showToast) this.showToast('Borrador guardado exitosamente en el servidor.', 'success');
-        return true;
-      } else {
-        this.updateSyncStatus('Guardado localmente');
-        return false;
-      }
-    } catch (err) {
-      this.updateSyncStatus('Modo Offline (Guardado local)');
-      if (showToast) this.showToast('Borrador guardado en la memoria de este dispositivo.', 'info');
+    } catch (e) {
+      console.warn('Aviso: no se pudo guardar borrador en localStorage:', e);
+      this.updateSyncStatus('Aviso de almacenamiento local');
       return false;
     }
   }
@@ -2012,28 +1963,20 @@ class IndustracApp {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && (parsed.client || parsed.equipmentId)) {
-          // Si el borrador guardado en localStorage tiene un ID que fue eliminado del servidor, descartarlo
-          const serverReport = this.reports && this.reports.find(r => (parsed.id && r.id === parsed.id) || (parsed.reportNumber && r.reportNumber === parsed.reportNumber));
-          if (parsed.id && !serverReport) {
-            localStorage.removeItem('industrac_active_draft');
-          } else {
-            if (!parsed.draftSavedOn || parsed.draftSavedOn !== today || !parsed.date || parsed.date !== today) {
-              parsed.date = today;
-            }
-            parsed.draftSavedOn = today;
-            if (parsed.maintenanceType) {
-              parsed.maintenanceType = this.normalizeMaintenanceType(parsed.maintenanceType);
-            }
-            this.reportData = parsed;
-            this.syncStateToForm();
-            const numInput = document.getElementById('field-report-number');
-            if (numInput) numInput.value = this.reportData.reportNumber || '';
-            if (this.reportData.reportNumber) {
-              this.showToast(`Borrador activo: Reporte N° ${this.reportData.reportNumber}`, 'info');
-            }
-            return;
+        if (parsed && (parsed.client || parsed.equipmentId || parsed.model || parsed.observations)) {
+          if (!parsed.draftSavedOn || parsed.draftSavedOn !== today || !parsed.date || parsed.date !== today) {
+            parsed.date = today;
           }
+          parsed.draftSavedOn = today;
+          if (parsed.maintenanceType) {
+            parsed.maintenanceType = this.normalizeMaintenanceType(parsed.maintenanceType);
+          }
+          this.reportData = parsed;
+          this.syncStateToForm();
+          const numInput = document.getElementById('field-report-number');
+          if (numInput) numInput.value = this.reportData.reportNumber || '';
+          this.updateSyncStatus('Borrador local recuperado');
+          return;
         }
       } catch (e) {
         console.warn('Error leyendo borrador local:', e);
@@ -2048,20 +1991,25 @@ class IndustracApp {
     const numInput = document.getElementById('field-report-number');
     if (numInput) numInput.value = '';
     this.suggestMechanicalTasks('Plan A — 2000 horas');
+    this.updateSyncStatus('Formulario listo');
   }
 
   async startNewReport() {
-    if (confirm('¿Desea iniciar un nuevo reporte? Asegúrese de haber guardado el actual.')) {
-      localStorage.removeItem('industrac_active_draft');
-      this.reportData = this.getEmptyReport();
-      this.syncStateToForm();
-      if (this.techSigPad) this.techSigPad.clear();
-      if (this.clientSigPad) this.clientSigPad.clear();
-      if (this.photoManager) this.photoManager.setPhotos([]);
-      this.goToStep(1);
-      this.switchTab('tab-report');
-      await this.restoreOrCreateDraft();
+    const hasData = this.reportData && (this.reportData.client || this.reportData.equipmentId || this.reportData.model || this.reportData.observations);
+    if (hasData) {
+      if (!confirm('¿Desea iniciar un nuevo reporte? Se descartará el borrador actual en edición.')) {
+        return;
+      }
     }
+    localStorage.removeItem('industrac_active_draft');
+    this.reportData = this.getEmptyReport();
+    this.syncStateToForm();
+    if (this.techSigPad) this.techSigPad.clear();
+    if (this.clientSigPad) this.clientSigPad.clear();
+    if (this.photoManager) this.photoManager.setPhotos([]);
+    this.goToStep(1);
+    this.switchTab('tab-report');
+    this.updateSyncStatus('Formulario listo');
   }
 
   // --- REVIEW SUMMARY (STEP 9) ---
@@ -2208,6 +2156,11 @@ class IndustracApp {
 
   // --- FINALIZACIÓN Y GENERACIÓN PDF ---
   async finalizeReport() {
+    if (this.isFinalizing) {
+      this.showToast('Procesando finalización del reporte, por favor espere...', 'info');
+      return;
+    }
+
     this.syncFormToState();
 
     // Check mandatory client field
@@ -2235,8 +2188,9 @@ class IndustracApp {
       this.showToast('Nota: El reporte se emitirá sin firmas registradas.', 'warning');
     }
 
+    this.isFinalizing = true;
     try {
-      this.showToast('Finalizando reporte...', 'info');
+      this.showToast('Guardando reporte oficial en el servidor...', 'info');
 
       // 1. Obtener número de reporte manual si fue ingresado por el usuario
       const manualNumInput = document.getElementById('field-report-number');
@@ -2244,47 +2198,61 @@ class IndustracApp {
         this.reportData.reportNumber = (manualNumInput.value || '').trim();
       }
 
-      // 2. Marcar como Finalizado
+      // 2. Marcar explícitamente como Finalizado
       this.reportData.status = 'Finalizado';
 
-      // 3. Persistir metadatos en servidor
-      let savedOk = await this.saveDraft(false);
-      if (!savedOk) {
-        console.warn('Primer intento de guardado no confirmado en servidor. Reintentando vía POST directo...');
-        this.reportData.id = null;
-        savedOk = await this.saveDraft(false);
-      }
-      if (!savedOk) {
-        this.showToast('Aviso: El reporte no pudo sincronizarse con el servidor. Se generará el PDF localmente.', 'warning');
+      // 3. Persistir exclusivamente en este momento en el servidor
+      let savedReport = null;
+      let res;
+      if (this.reportData.id) {
+        res = await fetch(`/api/reports/${this.reportData.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.reportData)
+        });
+      } else {
+        res = await fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.reportData)
+        });
       }
 
-      // Verify confirmed report number
-      const confirmedNumber = (this.reportData.reportNumber && this.reportData.reportNumber !== 'AUTO') 
-        ? this.reportData.reportNumber 
-        : 'REP-2026-0001';
-      this.reportData.reportNumber = confirmedNumber;
+      if (!res.ok) {
+        throw new Error(`El servidor respondió con código HTTP ${res.status}`);
+      }
 
-      // 4. Update data on all views immediately so Horómetros and Historial reflect confirmed persistence
+      savedReport = await res.json();
+      this.reportData.id = savedReport.id;
+      if (savedReport.reportNumber) {
+        this.reportData.reportNumber = savedReport.reportNumber;
+      }
+
+      // 4. Limpiar borrador local tras confirmación de guardado oficial en servidor
+      localStorage.removeItem('industrac_active_draft');
+
+      // 5. Actualizar vistas inmediatamente
       await this.loadReports();
       await this.loadHorometersData();
       await this.loadEquipments();
 
-      this.showToast(`Generando PDF oficial para ${confirmedNumber}...`, 'info');
-
-      // 5. Generate high-fidelity PDF with the verified correlative
-      const doc = await this.pdfGen.generatePdf(this.reportData);
-
-      // 6. Download file safely across all browsers & upload to Google Drive
-      const fileName = this.generateReportPdfFileName(this.reportData);
-      await this.triggerFileDownload(doc, fileName, this.reportData.id);
-
-      this.showToast(`¡Reporte ${confirmedNumber} generado exitosamente!`, 'success');
-
-      // Clear draft cache once finalized
-      localStorage.removeItem('industrac_active_draft');
+      // 6. Generar documento PDF oficial
+      this.showToast('Generando documento PDF oficial...', 'info');
+      try {
+        const doc = await this.pdfGen.generatePdf(this.reportData);
+        const fileName = this.generateReportPdfFileName(this.reportData);
+        await this.triggerFileDownload(doc, fileName, this.reportData.id);
+        this.showToast('¡Reporte oficial finalizado y guardado exitosamente!', 'success');
+      } catch (pdfErr) {
+        console.error('Error generando PDF tras guardado:', pdfErr);
+        this.showToast('El reporte se guardó correctamente en el sistema, pero ocurrió un aviso al compilar el PDF: ' + pdfErr.message + '. Puede descargarlo desde el Historial.', 'warning');
+      }
     } catch (err) {
-      console.error('Error generando PDF:', err);
-      this.showToast('Error al generar el documento PDF: ' + err.message, 'error');
+      console.error('Error al finalizar reporte en servidor:', err);
+      this.showToast('No se pudo guardar el reporte en el servidor: ' + err.message + '. Su borrador se mantendrá a salvo.', 'error');
+      // No eliminar industrac_active_draft para no perder el trabajo
+    } finally {
+      this.isFinalizing = false;
     }
   }
 
@@ -2304,49 +2272,49 @@ class IndustracApp {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdfBase64, fileName })
       })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        if (data && (data.driveDownloadUrl || data.driveUrl)) {
-          driveLinked = true;
-          const driveBtn = document.getElementById('btn-modal-drive-link');
-          if (driveBtn) {
-            driveBtn.href = data.driveDownloadUrl || data.driveUrl;
-            driveBtn.style.display = 'inline-flex';
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          if (data && (data.driveDownloadUrl || data.driveUrl)) {
+            driveLinked = true;
+            const driveBtn = document.getElementById('btn-modal-drive-link');
+            if (driveBtn) {
+              driveBtn.href = data.driveDownloadUrl || data.driveUrl;
+              driveBtn.style.display = 'inline-flex';
+            }
+            this.showToast('☁️ PDF enlazado a Google Drive (PDF_REPORTES2027)', 'success');
+          } else {
+            throw new Error('Servidor no devolvió URL de Drive');
           }
-          this.showToast('☁️ PDF enlazado a Google Drive (PDF_REPORTES2027)', 'success');
-        } else {
-          throw new Error('Servidor no devolvió URL de Drive');
-        }
-      })
-      .catch(err => {
-        console.warn('Aviso: el servidor no pudo sincronizar a Drive, activando canal directo cliente-Drive:', err);
-        // Canal de respaldo directo desde el navegador hacia Google Apps Script (inmune a límites de servidor o Vercel)
-        if (!driveLinked) {
-          const directWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-          const repNum = this.reportData.reportNumber || reportId;
-          fetch(directWebhook, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              action: 'upload_pdf_drive',
-              folderName: 'PDF_REPORTES2027',
-              reportId: reportId,
-              reportNumber: repNum,
-              fileName: fileName,
-              pdfBase64: cleanBase64
+        })
+        .catch(err => {
+          console.warn('Aviso: el servidor no pudo sincronizar a Drive, activando canal directo cliente-Drive:', err);
+          // Canal de respaldo directo desde el navegador hacia Google Apps Script (inmune a límites de servidor o Vercel)
+          if (!driveLinked) {
+            const directWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
+            const repNum = this.reportData.reportNumber || reportId;
+            fetch(directWebhook, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({
+                action: 'upload_pdf_drive',
+                folderName: 'PDF_REPORTES2027',
+                reportId: reportId,
+                reportNumber: repNum,
+                fileName: fileName,
+                pdfBase64: cleanBase64
+              })
             })
-          })
-          .then(() => {
-            console.log('[Google Drive] Respaldo directo enviado a la carpeta PDF_REPORTES2027.');
-            this.showToast('☁️ PDF enviado a Google Drive (PDF_REPORTES2027)', 'success');
-          })
-          .catch(eDirect => console.warn('[Google Drive] Error en respaldo directo:', eDirect));
-        }
-      });
+              .then(() => {
+                console.log('[Google Drive] Respaldo directo enviado a la carpeta PDF_REPORTES2027.');
+                this.showToast('☁️ PDF enviado a Google Drive (PDF_REPORTES2027)', 'success');
+              })
+              .catch(eDirect => console.warn('[Google Drive] Error en respaldo directo:', eDirect));
+          }
+        });
     }
 
     // 2. Direct browser download trigger via DOM anchor
@@ -2440,7 +2408,7 @@ class IndustracApp {
     this.goToStep(1);
     this.switchTab('tab-report');
     await this.restoreOrCreateDraft();
-    this.showToast(`¡Nuevo reporte iniciado! Correlativo asignado: ${this.reportData.reportNumber}`, 'success');
+    this.showToast('¡Nuevo reporte iniciado! Ingrese los datos del servicio.', 'success');
   }
 
   async previewReportPdf() {
@@ -2472,7 +2440,9 @@ class IndustracApp {
     const tbody = document.getElementById('history-table-body');
     if (!tbody) return;
 
-    const list = filteredReports || this.reports;
+    // Fase 2: El historial oficial muestra exclusivamente reportes con status "Finalizado"
+    const baseList = filteredReports !== null ? filteredReports : (this.reports || []);
+    const list = baseList.filter(rep => rep && rep.status === 'Finalizado');
 
     if (list.length === 0) {
       const isFiltered = filteredReports !== null && this.reports && this.reports.length > 0;
@@ -2592,7 +2562,7 @@ class IndustracApp {
       const res = await fetch('/api/next-report-number?peek=true');
       const data = await res.json();
       newNumber = data.reportNumber;
-    } catch (e) {}
+    } catch (e) { }
 
     const cloned = JSON.parse(JSON.stringify(rep));
     cloned.id = null;
@@ -2834,7 +2804,7 @@ class IndustracApp {
 
     // Filter by query (Model, Serial Number, or API Code)
     if (this.catalogEquipmentSearch) {
-      filtered = filtered.filter(e => 
+      filtered = filtered.filter(e =>
         (e.model || '').toLowerCase().includes(this.catalogEquipmentSearch) ||
         (e.serialNumber || '').toLowerCase().includes(this.catalogEquipmentSearch) ||
         (e.apiCode || '').toLowerCase().includes(this.catalogEquipmentSearch) ||
@@ -3109,8 +3079,8 @@ class IndustracApp {
         // Selección robusta de cliente: por clientId o por coincidencia de nombre
         let selectedClientId = eq.clientId || '';
         if (!selectedClientId || !this.clients.some(c => c.id === selectedClientId)) {
-          const matchedClient = this.clients.find(c => 
-            c.id === eq.clientId || 
+          const matchedClient = this.clients.find(c =>
+            c.id === eq.clientId ||
             (eq.client && c.name && c.name.trim().toLowerCase() === eq.client.trim().toLowerCase())
           );
           if (matchedClient) selectedClientId = matchedClient.id;
@@ -3198,9 +3168,9 @@ class IndustracApp {
     };
 
     // 1. Guardado inmediato en memoria y localStorage (Inmune a recarga de página)
-    const existingIdx = this.equipments.findIndex(eq => 
-      (id && eq.id === id) || 
-      eq.id === eqId || 
+    const existingIdx = this.equipments.findIndex(eq =>
+      (id && eq.id === id) ||
+      eq.id === eqId ||
       (eq.apiCode && eq.apiCode.toLowerCase() === apiVal.toLowerCase())
     );
     if (existingIdx !== -1) {
@@ -3350,12 +3320,12 @@ class IndustracApp {
       if (targetEqId && !deletedIds.includes(targetEqId)) deletedIds.push(targetEqId);
       if (targetApiCode && !deletedIds.includes(targetApiCode)) deletedIds.push(targetApiCode);
       localStorage.setItem('industrac_deleted_equipments', JSON.stringify(deletedIds.slice(-100)));
-    } catch (e) {}
+    } catch (e) { }
 
     // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
-    this.equipments = this.equipments.filter(e => 
-      e.id !== targetEqId && 
-      e.id !== equipmentId && 
+    this.equipments = this.equipments.filter(e =>
+      e.id !== targetEqId &&
+      e.id !== equipmentId &&
       (!targetApiCode || (e.apiCode !== targetApiCode && e.serialNumber !== targetApiCode))
     );
     this.persistLocalCatalogCache();
@@ -3453,7 +3423,7 @@ class IndustracApp {
         deletedClients.push(client.name.trim().toLowerCase());
       }
       localStorage.setItem('industrac_deleted_clients', JSON.stringify(deletedClients.slice(-100)));
-    } catch (e) {}
+    } catch (e) { }
 
     // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
     const clientNameLower = (client.name || '').toLowerCase().trim();
@@ -3573,10 +3543,10 @@ class IndustracApp {
   }
 
   // --- MODO DEMOSTRACIÓN RETIRADO EN PRODUCCIÓN ---
-  openDemoManagerModal() {}
-  closeDemoManagerModal() {}
-  async loadDemoData() {}
-  async clearDemoData() {}
+  openDemoManagerModal() { }
+  closeDemoManagerModal() { }
+  async loadDemoData() { }
+  async clearDemoData() { }
 
   // --- ADMINISTRACIÓN DE PLANES DE MANTENIMIENTO: ÚNICAMENTE SEIS INTERVALOS OFICIALES ---
   renderPlansView() {
@@ -3627,9 +3597,9 @@ class IndustracApp {
           </div>
           <div class="plan-tasks-tags">
             ${tasks.map(tId => {
-              const found = allTasks.find(t => t.id === tId);
-              return `<span class="plan-task-pill">✓ ${found ? found.name : tId}</span>`;
-            }).join('')}
+        const found = allTasks.find(t => t.id === tId);
+        return `<span class="plan-task-pill">✓ ${found ? found.name : tId}</span>`;
+      }).join('')}
           </div>
         </div>
       ` : '';
@@ -3727,7 +3697,7 @@ class IndustracApp {
       }
 
       if (lastSyncEl) {
-        lastSyncEl.textContent = settings.lastSyncTime 
+        lastSyncEl.textContent = settings.lastSyncTime
           ? `Última sincronización: ${new Date(settings.lastSyncTime).toLocaleString()}`
           : 'Última sincronización: Ninguna';
       }

@@ -25,7 +25,7 @@ try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-} catch (e) {}
+} catch (e) { }
 
 // In-memory cache for fallback in read-only serverless environments (Vercel)
 const memoryStore = {};
@@ -45,14 +45,14 @@ function readJson(filePath, defaultValue = []) {
         memoryStore[filePath] = parsed;
         return parsed;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   try {
     if (!fs.existsSync(filePath)) {
       try {
         fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), 'utf8');
-      } catch (e) {}
+      } catch (e) { }
       return defaultValue;
     }
     const data = fs.readFileSync(filePath, 'utf8');
@@ -74,12 +74,12 @@ function writeJson(filePath, data) {
       try {
         const tmpPath = path.join('/tmp', path.basename(filePath));
         fs.writeFileSync(tmpPath, content, 'utf8');
-      } catch (tmpErr) {}
+      } catch (tmpErr) { }
       return true;
     }
 
     try {
-      const tempPath = `${filePath}.tmp`;
+      const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substr(2, 4)}.tmp`;
       fs.writeFileSync(tempPath, content, 'utf8');
       fs.renameSync(tempPath, filePath);
     } catch (renameErr) {
@@ -92,7 +92,7 @@ function writeJson(filePath, data) {
       try {
         const tmpPath = path.join('/tmp', path.basename(filePath));
         fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-      } catch (tmpErr) {}
+      } catch (tmpErr) { }
       return true;
     }
     console.error(`Error writing ${filePath}:`, err);
@@ -104,7 +104,7 @@ function writeJson(filePath, data) {
 function getNextReportNumber(peekOnly = false) {
   const currentYear = new Date().getFullYear();
   const counter = readJson(COUNTER_FILE, { prefix: 'REP', year: currentYear, lastSequence: 0 });
-  
+
   if (counter.year !== currentYear) {
     counter.year = currentYear;
     counter.lastSequence = 0;
@@ -154,7 +154,16 @@ app.get('/api/next-report-number', (req, res) => {
 
 // --- Reports Endpoints ---
 app.get('/api/reports', (req, res) => {
-  const reports = readJson(REPORTS_FILE, []);
+  let reports = readJson(REPORTS_FILE, []);
+  const { status, summary } = req.query;
+
+  // Filtrado oficial: Por defecto para el Historial, devolver únicamente reportes Finalizados.
+  // Si se solicita status=all se devuelven todos, o si se especifica un status concreto (ej. status=Borrador).
+  if (status && status !== 'all') {
+    reports = reports.filter(r => (r.status || '').toLowerCase() === status.toLowerCase());
+  } else if (!status) {
+    reports = reports.filter(r => r.status === 'Finalizado');
+  }
   // Return light list (omitting massive base64 photos for fast list loading if query param summary=true)
   if (req.query.summary === 'true') {
     const summaries = reports.map(r => ({
@@ -198,6 +207,33 @@ app.post('/api/reports', (req, res) => {
     let reportNumber = (reportData.reportNumber || '').trim();
     if (reportNumber === 'AUTO' || reportNumber.startsWith('REP-2026-...')) {
       reportNumber = '';
+    }
+
+    // Fase 3 - Idempotencia: Si ya existe un reporte con el mismo ID o mismo Número de Reporte no vacío, actualizar en vez de duplicar
+    const existingIndex = reports.findIndex(r =>
+      (reportData.id && r.id === reportData.id) ||
+      (reportNumber && r.reportNumber && r.reportNumber.trim().toLowerCase() === reportNumber.toLowerCase())
+    );
+
+    if (existingIndex !== -1) {
+      const existing = reports[existingIndex];
+      const updated = {
+        ...existing,
+        ...reportData,
+        id: existing.id,
+        reportNumber: reportNumber || existing.reportNumber,
+        status: reportData.status || existing.status,
+        updatedAt: new Date().toISOString()
+      };
+      reports[existingIndex] = updated;
+      writeJson(REPORTS_FILE, reports);
+
+      let horometerUpdate = null;
+      if (updated.status === 'Finalizado') {
+        syncReportToGoogleSheets(updated);
+        horometerUpdate = applyReportToEquipmentHorometer(updated);
+      }
+      return res.status(200).json({ ...updated, horometerUpdate, idempotent: true });
     }
 
     const newReport = {
@@ -276,7 +312,7 @@ app.delete('/api/reports/:id', async (req, res) => {
     let reports = readJson(REPORTS_FILE, []);
     const targetIdLower = rawId.toLowerCase();
 
-    const reportToDelete = reports.find(r => 
+    const reportToDelete = reports.find(r =>
       (r.id && String(r.id).trim().toLowerCase() === targetIdLower) ||
       (r.reportNumber && String(r.reportNumber).trim().toLowerCase() === targetIdLower)
     );
@@ -365,7 +401,8 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
 
     const cleanBase64 = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1].trim() : pdfBase64.trim();
     const buffer = Buffer.from(cleanBase64, 'base64');
-    const filePath = path.join(PDFS_DIR, `${req.params.id}.pdf`);
+    const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
 
     // Intentar guardar copia local en disco si es escribible (o /tmp si es Vercel serverless)
     try {
@@ -377,7 +414,7 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
       console.warn('[Storage] Entorno serverless/solo lectura (Vercel). Guardando en /tmp:', fsErr.message);
       try {
         fs.writeFileSync(path.join('/tmp', `${req.params.id}.pdf`), buffer);
-      } catch (tmpErr) {}
+      } catch (tmpErr) { }
     }
 
     const reports = readJson(REPORTS_FILE, []);
@@ -441,7 +478,8 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
 
 // Direct HTTP attachment download (100% reliable in all browsers)
 app.get('/api/reports/:id/pdf', (req, res) => {
-  const filePath = path.join(PDFS_DIR, `${req.params.id}.pdf`);
+  const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+  const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
   if (!fs.existsSync(filePath)) {
     return res.status(404).send('Archivo PDF no encontrado en el servidor. Debe generarlo previamente.');
   }
@@ -457,7 +495,8 @@ app.get('/api/reports/:id/pdf', (req, res) => {
 
 // Inline view for modal preview
 app.get('/api/reports/:id/pdf-view', (req, res) => {
-  const filePath = path.join(PDFS_DIR, `${req.params.id}.pdf`);
+  const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+  const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
   if (!fs.existsSync(filePath)) {
     return res.status(404).send('Archivo PDF no encontrado en el servidor.');
   }
@@ -635,8 +674,8 @@ app.put('/api/clients/:id', async (req, res) => {
 app.delete('/api/clients/:id', async (req, res) => {
   let clients = readJson(CLIENTS_FILE, []);
   const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-  const clientToDelete = clients.find(c => 
-    c.id === req.params.id || 
+  const clientToDelete = clients.find(c =>
+    c.id === req.params.id ||
     (rawParamId && c.id === rawParamId) ||
     (c.name && rawParamId && c.name.toLowerCase() === rawParamId.toLowerCase())
   );
@@ -654,15 +693,15 @@ app.delete('/api/clients/:id', async (req, res) => {
   const removeEquipments = req.query.removeEquipments === 'true';
   let equipments = readJson(EQUIPMENTS_FILE, []);
   if (removeEquipments) {
-    const toRemove = equipments.filter(e => 
-      e.clientId === clientToDelete.id || 
+    const toRemove = equipments.filter(e =>
+      e.clientId === clientToDelete.id ||
       (e.client && e.client.toLowerCase() === clientToDelete.name.toLowerCase())
     );
     for (const eqItem of toRemove) {
       await deleteEquipmentFromGoogleSheets(eqItem).catch(() => null);
     }
-    equipments = equipments.filter(e => 
-      e.clientId !== clientToDelete.id && 
+    equipments = equipments.filter(e =>
+      e.clientId !== clientToDelete.id &&
       (e.client || '').toLowerCase() !== clientToDelete.name.toLowerCase()
     );
     writeJson(EQUIPMENTS_FILE, equipments);
@@ -816,8 +855,8 @@ app.post('/api/equipments', async (req, res) => {
 app.put('/api/equipments/:id', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
   const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-  const idx = equipments.findIndex(e => 
-    e.id === req.params.id || 
+  const idx = equipments.findIndex(e =>
+    e.id === req.params.id ||
     (rawParamId && e.id === rawParamId) ||
     (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
     (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
@@ -829,9 +868,9 @@ app.put('/api/equipments/:id', async (req, res) => {
 
   // Check unique apiCode if changed
   if (req.body.apiCode && req.body.apiCode !== equipments[idx].apiCode) {
-    const duplicate = equipments.find(e => 
-      e.id !== equipments[idx].id && 
-      e.apiCode && 
+    const duplicate = equipments.find(e =>
+      e.id !== equipments[idx].id &&
+      e.apiCode &&
       e.apiCode.toLowerCase() === req.body.apiCode.trim().toLowerCase()
     );
     if (duplicate) {
@@ -880,8 +919,8 @@ app.put('/api/equipments/:id', async (req, res) => {
 app.patch('/api/equipments/:id/status', async (req, res) => {
   const equipments = readJson(EQUIPMENTS_FILE, []);
   const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-  const idx = equipments.findIndex(e => 
-    e.id === req.params.id || 
+  const idx = equipments.findIndex(e =>
+    e.id === req.params.id ||
     (rawParamId && e.id === rawParamId) ||
     (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
     (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
@@ -905,8 +944,8 @@ app.patch('/api/equipments/:id/status', async (req, res) => {
 app.delete('/api/equipments/:id', async (req, res) => {
   let equipments = readJson(EQUIPMENTS_FILE, []);
   const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-  const eq = equipments.find(e => 
-    e.id === req.params.id || 
+  const eq = equipments.find(e =>
+    e.id === req.params.id ||
     (rawParamId && e.id === rawParamId) ||
     (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
     (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
@@ -916,8 +955,8 @@ app.delete('/api/equipments/:id', async (req, res) => {
     return res.status(404).json({ error: 'Equipo no encontrado.' });
   }
 
-  equipments = equipments.filter(e => 
-    e.id !== eq.id && 
+  equipments = equipments.filter(e =>
+    e.id !== eq.id &&
     !(eq.apiCode && e.apiCode && e.apiCode.toLowerCase() === eq.apiCode.toLowerCase())
   );
   writeJson(EQUIPMENTS_FILE, equipments);
@@ -1265,8 +1304,8 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
 
   const hoursRemaining = nextMilestone !== null ? (nextMilestone - currentHours) : null;
   // Regla estricta: calcular fecha trimestral ÚNICAMENTE a partir de un mantenimiento o lectura real válida, jamás de la fecha de creación del registro
-  const quarterlyEstimatedDate = lastMaintDate 
-    ? addCalendarMonths(lastMaintDate, 3) 
+  const quarterlyEstimatedDate = lastMaintDate
+    ? addCalendarMonths(lastMaintDate, 3)
     : (lastReadingDate ? addCalendarMonths(lastReadingDate, 3) : null);
 
   let usageEstimatedDate = null;
@@ -1492,10 +1531,15 @@ function applyReportToEquipmentHorometer(report) {
   const latestExistingDate = eq.lastReadingDate || (eq.lastMaintenance && eq.lastMaintenance.date) || '';
   const isOlderDate = latestExistingDate && repDate < latestExistingDate;
 
-  const existingIdx = repNumber ? eq.readingsHistory.findIndex(h => h.reportNumber === repNumber) : -1;
+  const repId = report.id || '';
+  const existingIdx = eq.readingsHistory.findIndex(h =>
+    (repId && (h.reportId === repId || h.id === repId || h.id === `hist-boot-${repId}`)) ||
+    (repNumber && h.reportNumber === repNumber)
+  );
 
   const histEntry = {
     id: existingIdx !== -1 ? eq.readingsHistory[existingIdx].id : `maint-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    reportId: repId,
     date: repDate,
     hourMeter: validHour ? repHourMeter : currentEqHours,
     hours: validHour ? repHourMeter : currentEqHours,
@@ -1579,13 +1623,13 @@ function removeReportFromEquipmentHorometer(report) {
   equipments.forEach(eq => {
     if (!Array.isArray(eq.readingsHistory)) return;
 
-    const hadReport = eq.readingsHistory.some(r => 
-      (repNum && r.reportNumber === repNum) || 
+    const hadReport = eq.readingsHistory.some(r =>
+      (repNum && r.reportNumber === repNum) ||
       (repId && (r.id === repId || r.reportId === repId || r.id === `hist-boot-${repId}`))
     );
 
     if (hadReport) {
-      eq.readingsHistory = eq.readingsHistory.filter(r => 
+      eq.readingsHistory = eq.readingsHistory.filter(r =>
         !(repNum && r.reportNumber === repNum) &&
         !(repId && (r.id === repId || r.reportId === repId || r.id === `hist-boot-${repId}`))
       );

@@ -48,7 +48,7 @@
       }
     ],
     "createdAt": "2026-10-29T16:19:15.833Z",
-    "updatedAt": "2026-10-29T16:26:12.985Z",
+    "updatedAt": "2026-10-29T19:31:33.981Z",
     "lastReadingDate": "2026-10-29"
   },
   {
@@ -82,7 +82,8 @@
     },
     "readingsHistory": [],
     "createdAt": "2026-10-29T16:41:33.174Z",
-    "lastReadingDate": "2026-10-29"
+    "lastReadingDate": "2026-10-29",
+    "updatedAt": "2026-10-29T19:21:57.796Z"
   },
   {
     "id": "eq-1793292213356",
