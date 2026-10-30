@@ -7,34 +7,51 @@
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
-
 let supabase = null;
 
-if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
-  try {
-    supabase = createSupabaseClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false
-      }
-    });
-    console.log('[Supabase] Cliente inicializado correctamente con credenciales oficiales.');
-  } catch (err) {
-    console.error('[Supabase] Error al inicializar createClient:', err.message);
+function getSupabase() {
+  if (supabase) return supabase;
+
+  const rawUrl = process.env.SUPABASE_URL;
+  const url = rawUrl ? rawUrl.trim() : null;
+  const key = (
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_SECRET ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    ''
+  ).trim() || null;
+
+  if (url && key) {
+    try {
+      supabase = createSupabaseClient(url, key, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false
+        }
+      });
+      console.log('[Supabase] Cliente inicializado correctamente con credenciales oficiales.');
+      return supabase;
+    } catch (err) {
+      console.error('[Supabase] Error al inicializar createClient:', err.message);
+    }
+  } else {
+    console.warn('[Supabase] ATENCIÓN: SUPABASE_URL y/o SUPABASE_SECRET_KEY no están definidas en las variables de entorno.');
   }
-} else {
-  console.warn('[Supabase] ATENCIÓN: SUPABASE_URL y/o SUPABASE_SECRET_KEY no están definidas en las variables de entorno.');
+  return null;
 }
 
+supabase = getSupabase();
+
 function getClientOrThrow() {
-  if (!supabase) {
+  const client = getSupabase();
+  if (!client) {
     const error = new Error('Base de datos no configurada: SUPABASE_URL o SUPABASE_SECRET_KEY ausente.');
     error.status = 503;
     throw error;
   }
-  return supabase;
+  return client;
 }
 
 // ----------------------------------------------------------------------------
@@ -627,7 +644,8 @@ async function testConnection() {
 }
 
 module.exports = {
-  supabase,
+  get supabase() { return getSupabase(); },
+  getSupabase,
   testConnection,
   getClients,
   getClientById,

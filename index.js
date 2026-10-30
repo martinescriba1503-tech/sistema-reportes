@@ -701,11 +701,24 @@ app.get('/api/auth/me', optionalAuth, (req, res) => {
 app.get('/api/health', async (req, res) => {
   try {
     const conn = await db.testConnection();
+    const hasSecretKey = Boolean(
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_KEY ||
+      process.env.SUPABASE_SECRET ||
+      process.env.SUPABASE_SERVICE_KEY
+    );
+    const missingVars = [];
+    if (!process.env.SUPABASE_URL) missingVars.push('SUPABASE_URL');
+    if (!hasSecretKey) missingVars.push('SUPABASE_SECRET_KEY');
+    if (!process.env.API_SECRET_KEY) missingVars.push('API_SECRET_KEY');
+
     res.json({
       status: 'ok',
       engine: 'Supabase PostgreSQL',
-      supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY),
+      supabaseConfigured: Boolean(process.env.SUPABASE_URL && hasSecretKey),
       supabaseConnected: conn.ok,
+      missingVars,
       error: conn.error || null,
       environment: process.env.VERCEL ? 'vercel-serverless' : 'local',
       serverTime: new Date().toISOString()

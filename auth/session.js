@@ -5,7 +5,8 @@
 // ============================================================================
 
 const crypto = require('crypto');
-const { supabase } = require('../db/supabase');
+const db = require('../db/supabase');
+function getSupabaseClient() { return db.getSupabase ? db.getSupabase() : db.supabase; }
 require('dotenv').config();
 
 // Almacén en memoria para limitar intentos de inicio de sesión por IP
@@ -51,7 +52,14 @@ function resetAttempts(ip) {
 }
 
 function getSecret() {
-  const secret = (process.env.API_SECRET_KEY || process.env.SUPABASE_SECRET_KEY || '').trim();
+  const secret = (
+    process.env.API_SECRET_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_SECRET ||
+    ''
+  ).trim();
   if (!secret) {
     throw new Error('No se ha configurado API_SECRET_KEY ni SUPABASE_SECRET_KEY en las variables de entorno.');
   }
@@ -66,7 +74,7 @@ function getCookieOptions() {
   return {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'lax',
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     path: '/'
   };
@@ -146,6 +154,8 @@ async function authenticateUser(email, password, ip = '127.0.0.1') {
       }
     };
   }
+
+  const supabase = getSupabaseClient();
 
   // Opción 2: Autenticación mediante Supabase Auth
   if (supabase && cleanEmail && cleanEmail.includes('@')) {
