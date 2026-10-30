@@ -651,7 +651,8 @@ async function applyReportToEquipmentHorometer(report) {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1';
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : null) || req.ip || req.socket?.remoteAddress || '127.0.0.1';
     const authResult = await authenticateUser(email, password, ip);
 
     if (!authResult.ok) {
@@ -702,8 +703,10 @@ app.get('/api/health', async (req, res) => {
     res.json({
       status: 'ok',
       engine: 'Supabase PostgreSQL',
+      supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY),
       supabaseConnected: conn.ok,
       error: conn.error || null,
+      environment: process.env.VERCEL ? 'vercel-serverless' : 'local',
       serverTime: new Date().toISOString()
     });
   } catch (err) {

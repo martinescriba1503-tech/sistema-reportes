@@ -116,15 +116,31 @@ class IndustracApp {
   }
 
   // --- AUTENTICACIÓN Y SEGURIDAD ---
+  async fetchWithAuth(url, options = {}) {
+    const token = sessionStorage.getItem('industrac_auth_token') || localStorage.getItem('industrac_auth_token');
+    const headers = { ...(options.headers || {}) };
+    if (token && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const finalOptions = {
+      ...options,
+      credentials: 'include',
+      headers
+    };
+    return fetch(url, finalOptions);
+  }
+
   async checkAuthStatus() {
     try {
-      const res = await fetch('/api/auth/me');
-      const data = await res.json();
-      if (data && data.authenticated && data.user) {
-        this.currentUser = data.user;
-        this.updateUserSessionUI(data.user);
-        this.hideAuthModal();
-        return true;
+      const res = await this.fetchWithAuth('/api/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.authenticated && data.user) {
+          this.currentUser = data.user;
+          this.updateUserSessionUI(data.user);
+          this.hideAuthModal();
+          return true;
+        }
       }
     } catch (e) {
       console.warn('Error comprobando sesión de usuario:', e);
@@ -188,14 +204,32 @@ class IndustracApp {
     if (errBox) errBox.style.display = 'none';
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await this.fetchWithAuth('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email, password })
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        if (text.includes('Login – Vercel') || text.includes('Deployment Protection')) {
+          if (errBox) {
+            errBox.textContent = 'Acceso restringido por Vercel (Deployment Protection). Inicie sesión en su cuenta de Vercel o desactive la protección en Vercel > Settings > Deployment Protection.';
+            errBox.style.display = 'block';
+          }
+          return;
+        }
+        throw new Error(`Respuesta no esperada del servidor (HTTP ${res.status})`);
+      }
+
       const data = await res.json();
       if (res.ok && data.ok) {
+        if (data.token) {
+          sessionStorage.setItem('industrac_auth_token', data.token);
+          localStorage.setItem('industrac_auth_token', data.token);
+        }
         this.currentUser = data.user;
         this.updateUserSessionUI(data.user);
         this.hideAuthModal();
@@ -222,8 +256,10 @@ class IndustracApp {
 
   async logout() {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await this.fetchWithAuth('/api/auth/logout', { method: 'POST' });
     } catch (e) { }
+    sessionStorage.removeItem('industrac_auth_token');
+    localStorage.removeItem('industrac_auth_token');
     this.currentUser = null;
     this.updateUserSessionUI(null);
     this.showAuthModal();
@@ -757,7 +793,7 @@ class IndustracApp {
   // --- DATA LOADING & PLANS ---
   async loadPlans() {
     try {
-      const res = await fetch('/api/plans');
+      const res = await this.fetchWithAuth('/api/plans');
       this.plans = await res.json();
       this.renderMechanicalTasksList();
       this.suggestMechanicalTasks(this.reportData.maintenanceType);
@@ -832,7 +868,7 @@ class IndustracApp {
 
   async loadClients() {
     try {
-      const res = await fetch('/api/clients');
+      const res = await this.fetchWithAuth('/api/clients');
       if (res.status === 401) {
         this.showAuthModal();
         return;
@@ -860,7 +896,7 @@ class IndustracApp {
 
   async loadEquipments() {
     try {
-      const res = await fetch('/api/equipments');
+      const res = await this.fetchWithAuth('/api/equipments');
       if (res.status === 401) {
         this.showAuthModal();
         return;
@@ -890,7 +926,7 @@ class IndustracApp {
 
   async loadReports() {
     try {
-      const res = await fetch('/api/reports');
+      const res = await this.fetchWithAuth('/api/reports');
       if (res.status === 401) {
         this.showAuthModal();
         return;
@@ -2345,13 +2381,13 @@ class IndustracApp {
       let savedReport = null;
       let res;
       if (this.reportData.id) {
-        res = await fetch(`/api/reports/${this.reportData.id}`, {
+        res = await this.fetchWithAuth(`/api/reports/${this.reportData.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.reportData)
         });
       } else {
-        res = await fetch('/api/reports', {
+        res = await this.fetchWithAuth('/api/reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.reportData)
@@ -2407,7 +2443,7 @@ class IndustracApp {
       const cleanBase64 = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1].trim() : pdfBase64.trim();
       let driveLinked = false;
 
-      fetch(`/api/reports/${reportId}/pdf`, {
+      this.fetchWithAuth(`/api/reports/${reportId}/pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdfBase64, fileName })
@@ -2699,7 +2735,7 @@ class IndustracApp {
     // Fetch next number
     let newNumber = 'AUTO';
     try {
-      const res = await fetch('/api/next-report-number?peek=true');
+      const res = await this.fetchWithAuth('/api/next-report-number?peek=true');
       const data = await res.json();
       newNumber = data.reportNumber;
     } catch (e) { }
@@ -2752,7 +2788,7 @@ class IndustracApp {
       this.reports = this.reports.filter(r => r.id !== reportId && r.reportNumber !== reportId);
       this.renderHistoryTable(this.reports);
 
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
+      const res = await this.fetchWithAuth(`/api/reports/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success !== false) {
@@ -3156,7 +3192,7 @@ class IndustracApp {
     if (tbody) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">Cargando historial de reportes...</td></tr>';
       try {
-        const res = await fetch(`/api/equipments/${eq.id}/reports`);
+        const res = await this.fetchWithAuth(`/api/equipments/${eq.id}/reports`);
         const reports = await res.json();
 
         if (reports.length === 0) {
@@ -3331,13 +3367,13 @@ class IndustracApp {
     try {
       let res;
       if (id) {
-        res = await fetch(`/api/equipments/${encodeURIComponent(id)}`, {
+        res = await this.fetchWithAuth(`/api/equipments/${encodeURIComponent(id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } else {
-        res = await fetch('/api/equipments', {
+        res = await this.fetchWithAuth('/api/equipments', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -3369,7 +3405,7 @@ class IndustracApp {
 
   async toggleEquipmentStatus(equipmentId) {
     try {
-      const res = await fetch(`/api/equipments/${encodeURIComponent(equipmentId)}/status`, {
+      const res = await this.fetchWithAuth(`/api/equipments/${encodeURIComponent(equipmentId)}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -3469,7 +3505,7 @@ class IndustracApp {
     this.syncReportEquipmentSelects();
 
     try {
-      const res = await fetch(`/api/equipments/${encodeURIComponent(targetEqId)}`, { method: 'DELETE' });
+      const res = await this.fetchWithAuth(`/api/equipments/${encodeURIComponent(targetEqId)}`, { method: 'DELETE' });
       if (res.ok) {
         this.showToast('Equipo eliminado del catálogo.', 'success');
         await this.loadEquipments();
@@ -3565,7 +3601,7 @@ class IndustracApp {
     }
 
     try {
-      const res = await fetch(`/api/clients/${encodeURIComponent(clientId)}?removeEquipments=true`, { method: 'DELETE' });
+      const res = await this.fetchWithAuth(`/api/clients/${encodeURIComponent(clientId)}?removeEquipments=true`, { method: 'DELETE' });
       if (res.ok) {
         this.showToast(`Cliente "${client.name}" eliminado exitosamente.`, 'success');
         await this.loadClients();
@@ -3639,13 +3675,13 @@ class IndustracApp {
     try {
       let res;
       if (id) {
-        res = await fetch(`/api/clients/${id}`, {
+        res = await this.fetchWithAuth(`/api/clients/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } else {
-        res = await fetch('/api/clients', {
+        res = await this.fetchWithAuth('/api/clients', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -3795,7 +3831,7 @@ class IndustracApp {
     if (!modal) return;
 
     try {
-      const res = await fetch('/api/settings');
+      const res = await this.fetchWithAuth('/api/settings');
       const settings = await res.json();
       const inputUrl = document.getElementById('input-sheets-webhook-url');
       const chkAuto = document.getElementById('checkbox-sheets-autosync');
@@ -3841,7 +3877,7 @@ class IndustracApp {
     const autoSync = document.getElementById('checkbox-sheets-autosync')?.checked ?? true;
 
     try {
-      const res = await fetch('/api/settings', {
+      const res = await this.fetchWithAuth('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3871,7 +3907,7 @@ class IndustracApp {
     this.showToast('Probando conexión con Google Sheets...', 'info');
 
     try {
-      const res = await fetch('/api/google-sheets/test', {
+      const res = await this.fetchWithAuth('/api/google-sheets/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -3906,13 +3942,13 @@ class IndustracApp {
 
     try {
       // First save URL if changed
-      await fetch('/api/settings', {
+      await this.fetchWithAuth('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ googleSheetsWebhookUrl: url })
       });
 
-      const res = await fetch('/api/google-sheets/sync-all', { method: 'POST' });
+      const res = await this.fetchWithAuth('/api/google-sheets/sync-all', { method: 'POST' });
       const data = await res.json();
 
       if (res.ok) {
@@ -3932,7 +3968,7 @@ class IndustracApp {
   async pullFromGoogleSheets() {
     this.showToast('Descargando catálogo de Clientes y Equipos desde Google Sheets...', 'info');
     try {
-      const res = await fetch('/api/settings/pull-sheets', { method: 'POST' });
+      const res = await this.fetchWithAuth('/api/settings/pull-sheets', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
         this.showToast(data.message || 'Catálogo actualizado desde Google Sheets', 'success');
@@ -4026,7 +4062,7 @@ class IndustracApp {
 
   async loadHorometersData() {
     try {
-      const res = await fetch('/api/horometers');
+      const res = await this.fetchWithAuth('/api/horometers');
       if (!res.ok) throw new Error('Error al cargar datos de horómetros');
       const data = await res.json();
 
@@ -4682,7 +4718,7 @@ class IndustracApp {
     }
 
     try {
-      const res = await fetch(`/api/equipments/${equipmentId}/readings`, {
+      const res = await this.fetchWithAuth(`/api/equipments/${equipmentId}/readings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4790,7 +4826,7 @@ class IndustracApp {
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/equipments/${equipmentId}/maintenance`, {
+      const res = await this.fetchWithAuth(`/api/equipments/${equipmentId}/maintenance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -4919,7 +4955,7 @@ class IndustracApp {
     const alertThresholdHours = document.getElementById('field-config-alert-threshold')?.value ? parseFloat(document.getElementById('field-config-alert-threshold').value) : 200;
 
     try {
-      const res = await fetch(`/api/equipments/${equipmentId}/maintenance-config`, {
+      const res = await this.fetchWithAuth(`/api/equipments/${equipmentId}/maintenance-config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -5010,7 +5046,7 @@ class IndustracApp {
     if (modal) modal.classList.add('active');
 
     try {
-      const res = await fetch(`/api/equipments/${equipmentId}/horometer-history`);
+      const res = await this.fetchWithAuth(`/api/equipments/${equipmentId}/horometer-history`);
       if (!res.ok) throw new Error('Error al obtener historial');
       const timeline = await res.json();
 
@@ -5131,7 +5167,7 @@ class IndustracApp {
 
     try {
       this.showToast('Restableciendo horómetro del equipo...', 'info');
-      const res = await fetch(`/api/equipments/${encodeURIComponent(eqId)}/horometer`, { method: 'DELETE' });
+      const res = await this.fetchWithAuth(`/api/equipments/${encodeURIComponent(eqId)}/horometer`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success !== false) {
@@ -5170,7 +5206,7 @@ class IndustracApp {
 
     try {
       this.showToast('Eliminando equipo del sistema...', 'info');
-      const res = await fetch(`/api/equipments/${encodeURIComponent(eqId)}`, { method: 'DELETE' });
+      const res = await this.fetchWithAuth(`/api/equipments/${encodeURIComponent(eqId)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok) {

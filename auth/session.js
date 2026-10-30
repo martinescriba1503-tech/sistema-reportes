@@ -131,6 +131,8 @@ async function authenticateUser(email, password, ip = '127.0.0.1') {
 
   const apiSecret = (process.env.API_SECRET_KEY || '').trim();
 
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+
   // Opción 1: Autenticación con Clave Maestra de Administrador de INDUSTRAC
   if (apiSecret && password.trim() === apiSecret) {
     resetAttempts(ip);
@@ -138,7 +140,7 @@ async function authenticateUser(email, password, ip = '127.0.0.1') {
       ok: true,
       user: {
         id: 'industrac-admin',
-        email: email && email.includes('@') ? email.trim() : 'admin@industrac.com',
+        email: cleanEmail && cleanEmail.includes('@') ? cleanEmail : 'admin@industrac.com',
         role: 'admin',
         name: 'Administrador General INDUSTRAC'
       }
@@ -146,10 +148,10 @@ async function authenticateUser(email, password, ip = '127.0.0.1') {
   }
 
   // Opción 2: Autenticación mediante Supabase Auth
-  if (supabase && email && email.includes('@')) {
+  if (supabase && cleanEmail && cleanEmail.includes('@')) {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: cleanEmail,
         password: password
       });
 
@@ -167,11 +169,23 @@ async function authenticateUser(email, password, ip = '127.0.0.1') {
       }
       if (error) {
         recordFailedAttempt(ip);
-        return { ok: false, error: 'Credenciales inválidas o usuario no registrado en Supabase.' };
+        let userMessage = error.message || 'Credenciales inválidas o usuario no registrado en Supabase.';
+        if (error.message.includes('Invalid login credentials')) {
+          userMessage = 'Contraseña incorrecta o usuario no registrado en Supabase.';
+        } else if (error.message.includes('Email not confirmed')) {
+          userMessage = 'El correo electrónico no ha sido confirmado aún en Supabase.';
+        }
+        return { ok: false, error: userMessage };
       }
     } catch (sbErr) {
       console.error('[Auth] Error al conectar con Supabase Auth:', sbErr.message);
+      return { ok: false, error: 'Error al conectar con Supabase Auth: ' + sbErr.message };
     }
+  } else if (!supabase) {
+    return {
+      ok: false,
+      error: 'Error de configuración en el servidor: Las variables SUPABASE_URL o SUPABASE_SECRET_KEY no están configuradas en Vercel Preview.'
+    };
   }
 
   recordFailedAttempt(ip);
