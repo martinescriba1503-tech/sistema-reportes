@@ -206,6 +206,7 @@ function requireAuth(req, res, next) {
     const session = verifySessionToken(token);
     if (session) {
       req.user = session;
+      req.sessionToken = token;
       return next();
     }
   }
@@ -235,6 +236,7 @@ function optionalAuth(req, res, next) {
     const session = verifySessionToken(token);
     if (session) {
       req.user = session;
+      req.sessionToken = token;
     }
   }
   next();

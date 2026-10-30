@@ -684,7 +684,8 @@ app.get('/api/auth/me', optionalAuth, (req, res) => {
   if (req.user) {
     return res.json({
       authenticated: true,
-      user: req.user
+      user: req.user,
+      token: req.sessionToken || null
     });
   }
   return res.json({

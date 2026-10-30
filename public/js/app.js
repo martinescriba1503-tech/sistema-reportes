@@ -74,6 +74,7 @@ class IndustracApp {
     this.horometersPriorityList = [];
     this.horometersMonthlyProjection = null;
     this.currentUser = null;
+    this.sessionToken = null;
   }
 
   async init() {
@@ -117,10 +118,9 @@ class IndustracApp {
 
   // --- AUTENTICACIÓN Y SEGURIDAD ---
   async fetchWithAuth(url, options = {}) {
-    const token = sessionStorage.getItem('industrac_auth_token') || localStorage.getItem('industrac_auth_token');
     const headers = { ...(options.headers || {}) };
-    if (token && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${token}`;
+    if (this.sessionToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${this.sessionToken}`;
     }
     const finalOptions = {
       ...options,
@@ -137,6 +137,9 @@ class IndustracApp {
         const data = await res.json();
         if (data && data.authenticated && data.user) {
           this.currentUser = data.user;
+          if (data.token) {
+            this.sessionToken = data.token;
+          }
           this.updateUserSessionUI(data.user);
           this.hideAuthModal();
           return true;
@@ -146,6 +149,7 @@ class IndustracApp {
       console.warn('Error comprobando sesión de usuario:', e);
     }
     this.currentUser = null;
+    this.sessionToken = null;
     this.updateUserSessionUI(null);
     return false;
   }
@@ -216,7 +220,7 @@ class IndustracApp {
         const text = await res.text();
         if (text.includes('Login – Vercel') || text.includes('Deployment Protection')) {
           if (errBox) {
-            errBox.textContent = 'Acceso restringido por Vercel (Deployment Protection). Inicie sesión en su cuenta de Vercel o desactive la protección en Vercel > Settings > Deployment Protection.';
+            errBox.textContent = 'Acceso bloqueado por Vercel (Deployment Protection). Inicie sesión en su cuenta de Vercel o desactive la protección en Vercel: Settings > Deployment Protection > Preview Deployments.';
             errBox.style.display = 'block';
           }
           return;
@@ -225,11 +229,27 @@ class IndustracApp {
       }
 
       const data = await res.json();
-      if (res.ok && data.ok) {
-        if (data.token) {
-          sessionStorage.setItem('industrac_auth_token', data.token);
-          localStorage.setItem('industrac_auth_token', data.token);
+
+      // Detección de bloqueo por Vercel Authentication en formato JSON
+      if (data.message === 'Protected by Vercel Authentication' || data.error?.message === 'Protected deployment' || data.protection?.vercel_auth_enabled) {
+        if (errBox) {
+          errBox.textContent = 'Acceso bloqueado por Vercel (Deployment Protection). Debe desactivar "Vercel Authentication" en Vercel: Settings > Deployment Protection > Preview Deployments.';
+          errBox.style.display = 'block';
         }
+        return;
+      }
+
+      if (res.ok && data.ok) {
+        // Almacenar token únicamente en memoria de la aplicación (Requisito 7: sin localStorage ni sessionStorage)
+        if (data.token) {
+          this.sessionToken = data.token;
+        }
+        // Limpieza de cualquier residuo previo en almacenamiento web
+        try {
+          sessionStorage.removeItem('industrac_auth_token');
+          localStorage.removeItem('industrac_auth_token');
+        } catch (_) {}
+
         this.currentUser = data.user;
         this.updateUserSessionUI(data.user);
         this.hideAuthModal();
@@ -237,7 +257,10 @@ class IndustracApp {
         await this.loadAllSystemData();
       } else {
         if (errBox) {
-          errBox.textContent = data.error || 'Credenciales inválidas o no autorizadas.';
+          const errMsg = typeof data.error === 'string'
+            ? data.error
+            : (data.message || data.error?.message || 'Credenciales inválidas o no autorizadas.');
+          errBox.textContent = errMsg;
           errBox.style.display = 'block';
         }
       }
@@ -258,8 +281,11 @@ class IndustracApp {
     try {
       await this.fetchWithAuth('/api/auth/logout', { method: 'POST' });
     } catch (e) { }
-    sessionStorage.removeItem('industrac_auth_token');
-    localStorage.removeItem('industrac_auth_token');
+    this.sessionToken = null;
+    try {
+      sessionStorage.removeItem('industrac_auth_token');
+      localStorage.removeItem('industrac_auth_token');
+    } catch (_) {}
     this.currentUser = null;
     this.updateUserSessionUI(null);
     this.showAuthModal();
