@@ -1,17 +1,39 @@
+// ============================================================================
+// INDUSTRAC S.A.C. — SISTEMA DE REPORTES TÉCNICOS, EQUIPOS Y MANTENIMIENTO
+// Backend Oficial: Node.js Express + Supabase PostgreSQL
+// Compatible con: Vercel Serverless, Node.js local y Google Drive Oficial
+// ============================================================================
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const cookieParser = require('cookie-parser');
+require('dotenv').config();
+
+const db = require('./db/supabase');
+const {
+  authenticateUser,
+  createSessionToken,
+  verifySessionToken,
+  requireAuth,
+  optionalAuth,
+  getCookieOptions
+} = require('./auth/session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// Middleware de seguridad y parsing
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
+app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Anti-caching middleware estricto para evitar que la CDN de Vercel devuelva datos desactualizados
+// Anti-caching middleware estricto (Evita que la CDN o navegadores devuelvan datos desactualizados)
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -20,1178 +42,27 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Paths
-const DATA_DIR = path.join(__dirname, 'data');
-const REPORTS_FILE = path.join(DATA_DIR, 'reports.json');
-const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
-const EQUIPMENTS_FILE = path.join(DATA_DIR, 'equipments.json');
-const PLANS_FILE = path.join(DATA_DIR, 'plans.json');
-const COUNTER_FILE = path.join(DATA_DIR, 'counter.json');
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
-
-// Ensure data folder exists
+// Directorio temporal o local de PDFs
+const PDFS_DIR = path.join(__dirname, 'data', 'pdfs');
 try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(PDFS_DIR)) {
+    fs.mkdirSync(PDFS_DIR, { recursive: true });
   }
 } catch (e) { }
 
-// In-memory cache for fallback in read-only serverless environments (Vercel)
-const memoryStore = {};
-
-// Lightweight async mutex lock per resource to prevent race conditions during concurrent updates
-const resourceLocks = new Map();
-
-function withLock(resource, fn) {
-  const prevPromise = resourceLocks.get(resource) || Promise.resolve();
-  let release;
-  const currentPromise = new Promise(resolve => { release = resolve; });
-  resourceLocks.set(resource, prevPromise.then(() => currentPromise).catch(() => currentPromise));
-
-  return prevPromise.catch(() => {}).then(async () => {
-    try {
-      return await fn();
-    } finally {
-      release();
-      if (resourceLocks.get(resource) === currentPromise) {
-        resourceLocks.delete(resource);
-      }
-    }
-  });
-}
-
-// --- VERCEL KV / UPSTASH PERSISTENCE ENGINE ---
-const KV_REST_API_URL = (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '').trim();
-const KV_REST_API_TOKEN = (process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
-const hasKvStore = Boolean(KV_REST_API_URL && KV_REST_API_TOKEN);
-
-const KV_KEYS_MAP = {
-  [CLIENTS_FILE]: 'industrac:clients',
-  [EQUIPMENTS_FILE]: 'industrac:equipments',
-  [REPORTS_FILE]: 'industrac:reports',
-  [COUNTER_FILE]: 'industrac:counter',
-  [SETTINGS_FILE]: 'industrac:settings'
-};
-
-async function getFromKV(key) {
-  if (!hasKvStore) return null;
-  try {
-    const res = await fetch(`${KV_REST_API_URL}/get/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` }
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.result !== null && json.result !== undefined) {
-        return typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
-      }
-    }
-    // Fallback: Upstash / Vercel KV Command API
-    const cmdRes = await fetch(KV_REST_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(['GET', key])
-    });
-    if (cmdRes.ok) {
-      const cmdJson = await cmdRes.json();
-      if (cmdJson.result !== null && cmdJson.result !== undefined) {
-        return typeof cmdJson.result === 'string' ? JSON.parse(cmdJson.result) : cmdJson.result;
-      }
-    }
-    return null;
-  } catch (e) {
-    console.warn(`[KV Storage] Error reading key ${key}:`, e.message);
-    return null;
-  }
-}
-
-async function setToKV(key, value) {
-  if (!hasKvStore) return false;
-  try {
-    const valStr = typeof value === 'string' ? value : JSON.stringify(value);
-    // Method 1: Upstash / Vercel KV Command API
-    const res = await fetch(KV_REST_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(['SET', key, valStr])
-    });
-    if (res.ok) return true;
-
-    // Method 2: Fallback path API
-    const fallbackRes = await fetch(`${KV_REST_API_URL}/set/${encodeURIComponent(key)}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(valStr)
-    });
-    return fallbackRes.ok;
-  } catch (e) {
-    console.warn(`[KV Storage] Error writing key ${key}:`, e.message);
-    return false;
-  }
-}
-
-let lastKvHydrateTime = 0;
-async function hydrateStoreFromKV(force = false) {
-  if (!hasKvStore) return false;
-  const now = Date.now();
-  if (!force && now - lastKvHydrateTime < 3000) return true;
-  lastKvHydrateTime = now;
-
-  try {
-    for (const [filePath, kvKey] of Object.entries(KV_KEYS_MAP)) {
-      const data = await getFromKV(kvKey);
-      if (data !== null && data !== undefined) {
-        memoryStore[filePath] = data;
-      } else {
-        try {
-          if (fs.existsSync(filePath)) {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const parsed = JSON.parse(raw || '[]');
-            memoryStore[filePath] = parsed;
-            setToKV(kvKey, parsed).catch(() => { });
-          }
-        } catch (e) { }
-      }
-    }
-    return true;
-  } catch (err) {
-    console.warn('[KV Storage] Error during hydration:', err.message);
-    return false;
-  }
-}
-
-// Hydrate on requests in Vercel if KV is available
-app.use('/api', async (req, res, next) => {
-  if (process.env.VERCEL && hasKvStore) {
-    await hydrateStoreFromKV();
-  }
-  next();
-});
-
-// Helpers for thread-safe JSON operations
-function readJson(filePath, defaultValue = []) {
-  // En Vercel serverless, verificar si hay datos en memoria o en /tmp
-  if (process.env.VERCEL) {
-    if (memoryStore[filePath] !== undefined) {
-      return memoryStore[filePath];
-    }
-    try {
-      const tmpPath = path.join('/tmp', path.basename(filePath));
-      if (fs.existsSync(tmpPath)) {
-        const tmpData = fs.readFileSync(tmpPath, 'utf8');
-        const parsed = JSON.parse(tmpData || '[]');
-        memoryStore[filePath] = parsed;
-        return parsed;
-      }
-    } catch (e) { }
-  }
-
-  try {
-    if (!fs.existsSync(filePath)) {
-      try {
-        fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), 'utf8');
-      } catch (e) { }
-      return defaultValue;
-    }
-    const data = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(data || '[]');
-  } catch (err) {
-    console.error(`Error reading ${filePath}:`, err);
-    return defaultValue;
-  }
-}
-
-function writeJson(filePath, data) {
-  memoryStore[filePath] = data;
-
-  // Persistir en Vercel KV si está configurado
-  if (hasKvStore && KV_KEYS_MAP[filePath]) {
-    setToKV(KV_KEYS_MAP[filePath], data).catch(err => {
-      console.warn(`[KV Storage] Error guardando ${KV_KEYS_MAP[filePath]}:`, err.message);
-    });
-  }
-
-  try {
-    const content = JSON.stringify(data, null, 2);
-
-    // En Vercel serverless, el sistema de archivos principal es de solo lectura; persistir en /tmp
-    if (process.env.VERCEL) {
-      try {
-        const tmpPath = path.join('/tmp', path.basename(filePath));
-        fs.writeFileSync(tmpPath, content, 'utf8');
-      } catch (tmpErr) { }
-      return true;
-    }
-
-    try {
-      const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substr(2, 4)}.tmp`;
-      fs.writeFileSync(tempPath, content, 'utf8');
-      fs.renameSync(tempPath, filePath);
-    } catch (renameErr) {
-      // Fallback para evitar EPERM por sincronización en segundo plano de OneDrive en Windows
-      fs.writeFileSync(filePath, content, 'utf8');
-    }
-    return true;
-  } catch (err) {
-    if (process.env.VERCEL) {
-      try {
-        const tmpPath = path.join('/tmp', path.basename(filePath));
-        fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-      } catch (tmpErr) { }
-      return true;
-    }
-    console.error(`Error writing ${filePath}:`, err);
-    return false;
-  }
-}
-
-// Atomic report number generator: REP-YYYY-XXXX (Strictly correlative)
-function getNextReportNumber(peekOnly = false) {
-  const currentYear = new Date().getFullYear();
-  const counter = readJson(COUNTER_FILE, { prefix: 'REP', year: currentYear, lastSequence: 0 });
-
-  if (counter.year !== currentYear) {
-    counter.year = currentYear;
-    counter.lastSequence = 0;
-  }
-
-  // Scan ALL reports in reports.json to guarantee no duplicate sequence
-  const reports = readJson(REPORTS_FILE, []);
-  let maxSeq = counter.lastSequence || 0;
-
-  reports.forEach(r => {
-    if (r.reportNumber) {
-      const match = String(r.reportNumber).match(new RegExp(`^${counter.prefix}-${currentYear}-(\\d+)$`));
-      if (match) {
-        const seq = parseInt(match[1], 10);
-        if (seq > maxSeq) {
-          maxSeq = seq;
-        }
-      }
-    }
-  });
-
-  const nextSeq = maxSeq + 1;
-  const formattedSeq = String(nextSeq).padStart(4, '0');
-  const numberStr = `${counter.prefix}-${currentYear}-${formattedSeq}`;
-
-  if (!peekOnly) {
-    counter.lastSequence = nextSeq;
-    writeJson(COUNTER_FILE, counter);
-  }
-
-  return numberStr;
-}
-
-// --- API ROUTES ---
-
-// Health check & Storage Diagnostic
-app.get('/api/health', (req, res) => {
-  const clients = readJson(CLIENTS_FILE, []);
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const reports = readJson(REPORTS_FILE, []);
-
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: process.env.VERCEL ? 'vercel-serverless' : 'persistent-server',
-    storageEngine: hasKvStore ? 'vercel-kv-persistent' : (process.env.VERCEL ? 'ephemeral-tmp' : 'local-disk-persistent'),
-    kvConfigured: hasKvStore,
-    counts: {
-      clients: clients.length,
-      equipments: equipments.length,
-      reports: reports.length
-    }
-  });
-});
-
-// Next report number preview
-app.get('/api/next-report-number', (req, res) => {
-  const peek = req.query.peek === 'true';
-  const number = getNextReportNumber(peek);
-  res.json({ reportNumber: number });
-});
-
-// --- Reports Endpoints ---
-app.get('/api/reports', (req, res) => {
-  let reports = readJson(REPORTS_FILE, []);
-  const { status, summary } = req.query;
-
-  // Filtrado oficial: Por defecto para el Historial, devolver únicamente reportes Finalizados.
-  // Si se solicita status=all se devuelven todos, o si se especifica un status concreto (ej. status=Borrador).
-  if (status && status !== 'all') {
-    reports = reports.filter(r => (r.status || '').toLowerCase() === status.toLowerCase());
-  } else if (!status) {
-    reports = reports.filter(r => r.status === 'Finalizado');
-  }
-  // Return light list (omitting massive base64 photos for fast list loading if query param summary=true)
-  if (req.query.summary === 'true') {
-    const summaries = reports.map(r => ({
-      id: r.id,
-      reportNumber: r.reportNumber,
-      date: r.date,
-      client: r.client,
-      model: r.model,
-      serialNumber: r.serialNumber,
-      technician: r.technician,
-      maintenanceType: r.maintenanceType,
-      status: r.status,
-      updatedAt: r.updatedAt,
-      photosCount: (r.photos || []).length
-    }));
-    return res.json(summaries);
-  }
-  res.json(reports);
-});
-
-app.get('/api/reports/:id', (req, res) => {
-  const reports = readJson(REPORTS_FILE, []);
-  const report = reports.find(r => r.id === req.params.id || r.reportNumber === req.params.id);
-  if (!report) {
-    return res.status(404).json({ error: 'Reporte no encontrado' });
-  }
-  res.json(report);
-});
-
-app.post('/api/reports', (req, res) => {
-  return withLock('reports', async () => {
-    try {
-      const reports = readJson(REPORTS_FILE, []);
-      const reportData = req.body;
-
-      const clientName = (reportData.client || '').trim();
-      if (!clientName) {
-        return res.status(400).json({ error: 'El nombre del cliente es obligatorio para registrar o guardar un reporte.' });
-      }
-
-      // Número de Reporte / Cotización (Manual / Opcional - Sin correlativo automático forzado)
-      let reportNumber = (reportData.reportNumber || '').trim();
-      if (reportNumber === 'AUTO' || reportNumber.startsWith('REP-2026-...')) {
-        reportNumber = '';
-      }
-
-      // Fase 3 - Idempotencia: Si ya existe un reporte con el mismo ID o mismo Número de Reporte no vacío, actualizar en vez de duplicar
-      const existingIndex = reports.findIndex(r =>
-        (reportData.id && r.id === reportData.id) ||
-        (reportNumber && r.reportNumber && r.reportNumber.trim().toLowerCase() === reportNumber.toLowerCase())
-      );
-
-      if (existingIndex !== -1) {
-        const existing = reports[existingIndex];
-        const updated = {
-          ...existing,
-          ...reportData,
-          id: existing.id,
-          reportNumber: reportNumber || existing.reportNumber,
-          status: reportData.status || existing.status,
-          updatedAt: new Date().toISOString()
-        };
-        reports[existingIndex] = updated;
-        writeJson(REPORTS_FILE, reports);
-
-        let horometerUpdate = null;
-        if (updated.status === 'Finalizado') {
-          syncReportToGoogleSheets(updated);
-          horometerUpdate = applyReportToEquipmentHorometer(updated);
-        }
-        return res.status(200).json({ ...updated, horometerUpdate, idempotent: true });
-      }
-
-      const newReport = {
-        ...reportData,
-        id: reportData.id || `rep-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        reportNumber: reportNumber,
-        status: reportData.status || 'Borrador', // 'Borrador' | 'Pendiente de revisión' | 'Finalizado'
-        createdAt: reportData.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      reports.unshift(newReport);
-      writeJson(REPORTS_FILE, reports);
-
-      // Auto-sync to Google Sheets in background if finalized
-      let horometerUpdate = null;
-      if (newReport.status === 'Finalizado') {
-        syncReportToGoogleSheets(newReport);
-        horometerUpdate = applyReportToEquipmentHorometer(newReport);
-      }
-
-      res.status(201).json({ ...newReport, horometerUpdate });
-    } catch (err) {
-      console.error('Error saving report:', err);
-      res.status(500).json({ error: 'Error interno al guardar el reporte' });
-    }
-  });
-});
-
-app.put('/api/reports/:id', (req, res) => {
-  return withLock('reports', async () => {
-    try {
-      const reports = readJson(REPORTS_FILE, []);
-      const index = reports.findIndex(r => r.id === req.params.id || r.reportNumber === req.params.id);
-
-      if (index === -1) {
-        return res.status(404).json({ error: 'Reporte no encontrado en el sistema o fue eliminado previamente.' });
-      }
-
-      const current = reports[index];
-      let validReportNumber = (req.body.reportNumber !== undefined ? req.body.reportNumber : (current.reportNumber || '')).trim();
-      if (validReportNumber === 'AUTO' || validReportNumber.startsWith('REP-2026-...')) {
-        validReportNumber = '';
-      }
-
-      const updated = {
-        ...current,
-        ...req.body,
-        id: current.id, // Immutable ID
-        reportNumber: validReportNumber,
-        updatedAt: new Date().toISOString()
-      };
-      reports[index] = updated;
-
-      writeJson(REPORTS_FILE, reports);
-
-      // Auto-sync to Google Sheets in background if finalized
-      let horometerUpdate = null;
-      if (updated.status === 'Finalizado') {
-        syncReportToGoogleSheets(updated);
-        horometerUpdate = applyReportToEquipmentHorometer(updated);
-      }
-
-      res.json({ ...updated, horometerUpdate });
-    } catch (err) {
-      console.error('Error updating report:', err);
-      res.status(500).json({ error: 'Error al actualizar el reporte' });
-    }
-  });
-});
-
-app.delete('/api/reports/:id', async (req, res) => {
-  return withLock('reports', async () => {
-    try {
-      const rawId = req.params.id ? String(req.params.id).trim() : '';
-      if (!rawId) {
-        return res.status(400).json({ error: 'ID o número de reporte inválido o vacío' });
-      }
-
-      let reports = readJson(REPORTS_FILE, []);
-      const targetIdLower = rawId.toLowerCase();
-
-      const reportToDelete = reports.find(r =>
-        (r.id && String(r.id).trim().toLowerCase() === targetIdLower) ||
-        (r.reportNumber && String(r.reportNumber).trim().toLowerCase() === targetIdLower)
-      );
-
-      if (!reportToDelete) {
-        return res.status(404).json({ error: 'Reporte no encontrado en el sistema.' });
-      }
-
-      reports = reports.filter(r => r !== reportToDelete);
-      writeJson(REPORTS_FILE, reports);
-
-      // Call Google Sheets delete webhook if configured (non-blocking)
-      deleteReportFromGoogleSheets(reportToDelete).catch(err => {
-        console.warn('[Google Sheets Sync] Aviso al eliminar:', err.message);
-      });
-
-      // Desvincular de los horómetros del equipo y recalcular
-      try {
-        removeReportFromEquipmentHorometer(reportToDelete);
-      } catch (eHoro) {
-        console.warn('[Horometers] Aviso al desvincular reporte de equipo:', eHoro.message);
-      }
-
-      console.log(`[Reports] Reporte ${reportToDelete.reportNumber || reportToDelete.id} eliminado permanentemente.`);
-      res.json({
-        success: true,
-        message: 'Reporte eliminado exitosamente',
-        id: reportToDelete.id,
-        reportNumber: reportToDelete.reportNumber
-      });
-    } catch (err) {
-      console.error('Error deleting report:', err);
-      res.status(500).json({ error: 'Error interno al eliminar el reporte' });
-    }
-  });
-});
-
-// PDF upload & download endpoints
-const PDFS_DIR = path.join(DATA_DIR, 'pdfs');
-if (!fs.existsSync(PDFS_DIR)) {
-  fs.mkdirSync(PDFS_DIR, { recursive: true });
-}
-
-// Generador de nombre estandarizado de archivo PDF:
-// REP-(CLIENTE)-(MODELO DE COMPRESOR)-(TIPO DE MANTENIMIENTO)-(FECHA)
-function generateReportPdfFileName(report) {
-  if (!report) return 'REP-REPORTE.pdf';
-
-  const sanitize = (str) => {
-    if (!str) return '';
-    return String(str)
-      .replace(/[\\/:*?"<>|]/g, '')
-      .replace(/[\r\n\t]/g, ' ')
-      .replace(/[—–]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-
-  const client = sanitize(report.client) || 'CLIENTE';
-  const model = sanitize(report.model) || 'MODELO';
-  const maint = sanitize(report.maintenanceType || report.serviceType) || 'MANTENIMIENTO';
-
-  let dateStr = '';
-  if (report.date) {
-    const raw = String(report.date).split('T')[0].trim();
-    const parts = raw.split('-');
-    if (parts.length === 3) {
-      dateStr = parts.join('-');
-    } else {
-      dateStr = sanitize(report.date).replace(/[\/]/g, '-');
-    }
-  }
-  if (!dateStr) {
-    dateStr = new Date().toISOString().split('T')[0];
-  }
-
-  return `REP-${client}-${model}-${maint}-${dateStr}.pdf`;
-}
-
-// Upload generated PDF to server & Google Drive (Carpeta: PDF_REPORTES2027)
-app.post('/api/reports/:id/pdf', async (req, res) => {
-  try {
-    const { pdfBase64, fileName: requestedFileName } = req.body;
-    if (!pdfBase64) {
-      return res.status(400).json({ error: 'No se envió contenido del PDF' });
-    }
-
-    const cleanBase64 = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1].trim() : pdfBase64.trim();
-    const buffer = Buffer.from(cleanBase64, 'base64');
-    const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
-    const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
-
-    // Intentar guardar copia local en disco si es escribible (o /tmp si es Vercel serverless)
-    try {
-      if (!fs.existsSync(PDFS_DIR)) {
-        fs.mkdirSync(PDFS_DIR, { recursive: true });
-      }
-      fs.writeFileSync(filePath, buffer);
-    } catch (fsErr) {
-      console.warn('[Storage] Entorno serverless/solo lectura (Vercel). Guardando en /tmp:', fsErr.message);
-      try {
-        fs.writeFileSync(path.join('/tmp', `${req.params.id}.pdf`), buffer);
-      } catch (tmpErr) { }
-    }
-
-    const reports = readJson(REPORTS_FILE, []);
-    const reportIndex = reports.findIndex(r => r.id === req.params.id || r.reportNumber === req.params.id);
-    let report = reportIndex !== -1 ? reports[reportIndex] : null;
-
-    const fileName = requestedFileName || generateReportPdfFileName(report);
-
-    let driveResult = null;
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-
-    if (webhookUrl) {
-      try {
-        const repNum = report && report.reportNumber ? report.reportNumber : req.params.id;
-
-        console.log(`[Google Drive] Subiendo PDF "${fileName}" a carpeta PDF_REPORTES2027...`);
-        const driveRes = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'upload_pdf_drive',
-            folderName: 'PDF_REPORTES2027',
-            reportId: req.params.id,
-            reportNumber: repNum,
-            fileName: fileName,
-            pdfBase64: cleanBase64
-          })
-        });
-        const driveData = await driveRes.json();
-        if (driveData && driveData.status === 'success') {
-          driveResult = driveData;
-          console.log(`[Google Drive] ¡Subida exitosa a Drive! URL: ${driveData.driveViewUrl}`);
-          if (report) {
-            report.pdfDriveUrl = driveData.driveViewUrl;
-            report.pdfDriveDownloadUrl = driveData.driveDownloadUrl;
-            reports[reportIndex] = report;
-            writeJson(REPORTS_FILE, reports);
-          }
-        } else {
-          console.warn('[Google Drive] Respuesta no exitosa de Apps Script:', driveData);
-        }
-      } catch (eDrive) {
-        console.warn('[Google Drive Sync] Aviso: no se pudo sincronizar a Google Drive:', eDrive.message);
-      }
-    }
-
-    res.json({
-      message: driveResult ? 'PDF guardado en servidor y Google Drive' : 'PDF procesado exitosamente',
-      fileName: fileName,
-      downloadUrl: `/api/reports/${req.params.id}/pdf`,
-      driveUrl: driveResult?.driveViewUrl || null,
-      driveDownloadUrl: driveResult?.driveDownloadUrl || null
-    });
-  } catch (err) {
-    console.error('Error guardando PDF:', err);
-    res.status(500).json({ error: 'Error al procesar archivo PDF: ' + err.message });
-  }
-});
-
-// Direct HTTP attachment download (100% reliable in all browsers)
-app.get('/api/reports/:id/pdf', (req, res) => {
-  const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
-  const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('Archivo PDF no encontrado en el servidor. Debe generarlo previamente.');
-  }
-
-  const reports = readJson(REPORTS_FILE, []);
-  const report = reports.find(r => r.id === req.params.id || r.reportNumber === req.params.id);
-  const downloadName = generateReportPdfFileName(report);
-
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
-  res.sendFile(filePath);
-});
-
-// Inline view for modal preview
-app.get('/api/reports/:id/pdf-view', (req, res) => {
-  const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
-  const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('Archivo PDF no encontrado en el servidor.');
-  }
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'inline');
-  res.sendFile(filePath);
-});
-
-// =========================================================================
-// PRODUCTION CATALOG LOGIC (DEMO DATA RETIRED FOR PRODUCTION USE)
-// =========================================================================
-const DEMO_CLIENTS = [];
-
-const DEMO_EQUIPMENTS = [];
-
-// Helper to initialize catalog data
-// Helper to initialize catalog data, sync existing clients & demo data
-function initCatalogData() {
-  let clients = readJson(CLIENTS_FILE, []);
-  let equipments = readJson(EQUIPMENTS_FILE, []);
-
-  // 1. Ensure non-demo existing equipments have client entries and apiCodes
-  let clientsModified = false;
-  let equipmentsModified = false;
-
-  equipments.forEach(eq => {
-    if (!eq.status) {
-      eq.status = 'Activo';
-      equipmentsModified = true;
-    }
-    if (eq.active === undefined) {
-      eq.active = eq.status !== 'Inactivo';
-      equipmentsModified = true;
-    }
-    if (!eq.apiCode) {
-      eq.apiCode = `API-${(eq.id || 'EQ').toUpperCase()}`;
-      equipmentsModified = true;
-    }
-    if (!eq.isDemo) {
-      eq.isDemo = false;
-    }
-
-    // Ensure client exists in clients.json
-    if (eq.client) {
-      let clientObj = clients.find(c => c.name.toLowerCase() === eq.client.toLowerCase());
-      if (!clientObj) {
-        clientObj = {
-          id: `cli-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          name: eq.client,
-          address: eq.address || '',
-          contact: '',
-          notes: 'Cliente registrado desde catálogo base.',
-          isDemo: false
-        };
-        clients.push(clientObj);
-        clientsModified = true;
-      }
-      if (!eq.clientId || eq.clientId !== clientObj.id) {
-        eq.clientId = clientObj.id;
-        equipmentsModified = true;
-      }
-    }
-  });
-
-  if (clientsModified) writeJson(CLIENTS_FILE, clients);
-  if (equipmentsModified) writeJson(EQUIPMENTS_FILE, equipments);
-}
-
-// Run initialization once on startup
-initCatalogData();
-
-// --- CLIENTS ENDPOINTS ---
-app.get('/api/clients', (req, res) => {
-  const clients = readJson(CLIENTS_FILE, []);
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-
-  const normalize = (str) => (str || '').toLowerCase().replace(/[\.\s]/g, '');
-
-  const clientsWithStats = clients.map(c => {
-    const cNorm = normalize(c.name);
-    const matchedEquipments = equipments.filter(e => {
-      if (e.clientId && e.clientId === c.id) return true;
-      if (cNorm && normalize(e.client) === cNorm) return true;
-      return false;
-    });
-    const activeCount = matchedEquipments.filter(e => e.status !== 'Inactivo' && e.active !== false).length;
-    return {
-      ...c,
-      equipmentCount: matchedEquipments.length,
-      activeEquipmentCount: activeCount
-    };
-  });
-
-  res.json(clientsWithStats);
-});
-
-app.post('/api/clients', async (req, res) => {
-  return withLock('clients', async () => {
-    const clients = readJson(CLIENTS_FILE, []);
-    const name = (req.body.name || '').trim();
-
-    if (!name) {
-      return res.status(400).json({ error: 'El nombre del cliente es requerido.' });
-    }
-
-    // Prevent duplicate names
-    const existing = clients.find(c => c.name.toLowerCase() === name.toLowerCase());
-    if (existing) {
-      return res.status(400).json({ error: `Ya existe un cliente con el nombre "${name}".`, client: existing });
-    }
-
-    const newClient = {
-      id: req.body.id || `cli-${Date.now()}`,
-      name,
-      address: req.body.address || '',
-      contact: req.body.contact || '',
-      notes: req.body.notes || '',
-      isDemo: !!req.body.isDemo,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    clients.push(newClient);
-    writeJson(CLIENTS_FILE, clients);
-    await syncClientsToGoogleSheets().catch(() => null);
-    res.status(201).json(newClient);
-  });
-});
-
-app.put('/api/clients/:id', async (req, res) => {
-  return withLock('clients', async () => {
-    const clients = readJson(CLIENTS_FILE, []);
-    const idx = clients.findIndex(c => c.id === req.params.id);
-
-    if (idx === -1) {
-      return res.status(404).json({ error: 'Cliente no encontrado.' });
-    }
-
-    const oldName = clients[idx].name;
-    const newName = (req.body.name || oldName).trim();
-
-    // Check duplicate if name changed
-    if (newName.toLowerCase() !== oldName.toLowerCase()) {
-      const duplicate = clients.find(c => c.id !== req.params.id && c.name.toLowerCase() === newName.toLowerCase());
-      if (duplicate) {
-        return res.status(400).json({ error: `Ya existe otro cliente con el nombre "${newName}".` });
-      }
-    }
-
-    clients[idx] = {
-      ...clients[idx],
-      ...req.body,
-      name: newName,
-      id: clients[idx].id,
-      updatedAt: new Date().toISOString()
-    };
-    writeJson(CLIENTS_FILE, clients);
-    await syncClientsToGoogleSheets().catch(() => null);
-
-    // Sync client name in associated equipments
-    if (newName !== oldName) {
-      const equipments = readJson(EQUIPMENTS_FILE, []);
-      let eqModified = false;
-      equipments.forEach(eq => {
-        if (eq.clientId === req.params.id || eq.client === oldName) {
-          eq.client = newName;
-          eq.clientId = req.params.id;
-          eqModified = true;
-        }
-      });
-      if (eqModified) {
-        writeJson(EQUIPMENTS_FILE, equipments);
-        await syncEquipmentsToGoogleSheets().catch(() => null);
-      }
-    }
-
-    res.json(clients[idx]);
-  });
-});
-
-app.delete('/api/clients/:id', async (req, res) => {
-  return withLock('clients', async () => {
-    let clients = readJson(CLIENTS_FILE, []);
-    const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-    const clientToDelete = clients.find(c =>
-      c.id === req.params.id ||
-      (rawParamId && c.id === rawParamId) ||
-      (c.name && rawParamId && c.name.toLowerCase() === rawParamId.toLowerCase())
-    );
-
-    if (!clientToDelete) {
-      return res.status(404).json({ error: 'Cliente no encontrado.' });
-    }
-
-    clients = clients.filter(c => c.id !== clientToDelete.id);
-    writeJson(CLIENTS_FILE, clients);
-    await deleteClientFromGoogleSheets(clientToDelete).catch(() => null);
-    await syncClientsToGoogleSheets().catch(() => null);
-
-    // Also remove or disassociate its equipments if requested
-    const removeEquipments = req.query.removeEquipments === 'true';
-    let equipments = readJson(EQUIPMENTS_FILE, []);
-    if (removeEquipments) {
-      const toRemove = equipments.filter(e =>
-        e.clientId === clientToDelete.id ||
-        (e.client && e.client.toLowerCase() === clientToDelete.name.toLowerCase())
-      );
-      for (const eqItem of toRemove) {
-        await deleteEquipmentFromGoogleSheets(eqItem).catch(() => null);
-      }
-      equipments = equipments.filter(e =>
-        e.clientId !== clientToDelete.id &&
-        (e.client || '').toLowerCase() !== clientToDelete.name.toLowerCase()
-      );
-      writeJson(EQUIPMENTS_FILE, equipments);
-      await syncEquipmentsToGoogleSheets().catch(() => null);
-    }
-
-    res.json({ success: true, message: 'Cliente eliminado exitosamente.' });
-  });
-});
-
-// --- EQUIPMENTS ENDPOINTS ---
-app.get('/api/equipments', (req, res) => {
-  let equipments = readJson(EQUIPMENTS_FILE, []);
-  const { clientId, client, status, isDemo } = req.query;
-
-  if (clientId) {
-    equipments = equipments.filter(e => e.clientId === clientId);
-  } else if (client) {
-    equipments = equipments.filter(e => (e.client || '').toLowerCase() === client.toLowerCase());
-  }
-
-  if (status) {
-    equipments = equipments.filter(e => (e.status || 'Activo').toLowerCase() === status.toLowerCase());
-  }
-
-  if (isDemo !== undefined) {
-    const demoBool = isDemo === 'true';
-    equipments = equipments.filter(e => !!e.isDemo === demoBool);
-  }
-
-  res.json(equipments);
-});
-
-app.get('/api/equipments/:id', (req, res) => {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const eq = equipments.find(e => e.id === req.params.id || e.apiCode === req.params.id);
-  if (!eq) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
-  }
-  res.json(eq);
-});
-
-// Get reports history specifically for this machine
-app.get('/api/equipments/:id/reports', (req, res) => {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const eq = equipments.find(e => e.id === req.params.id || e.apiCode === req.params.id);
-  if (!eq) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
-  }
-
-  const reports = readJson(REPORTS_FILE, []);
-  const matchedReports = reports.filter(r => {
-    const matchId = r.equipmentId && r.equipmentId === eq.id;
-    const matchApi = r.apiCode && r.apiCode === eq.apiCode;
-    const matchSerial = r.serialNumber && eq.serialNumber && r.serialNumber.trim().toLowerCase() === eq.serialNumber.trim().toLowerCase();
-    const matchClientModel = r.client && eq.client && r.model && eq.model &&
-      r.client.trim().toLowerCase() === eq.client.trim().toLowerCase() &&
-      r.model.trim().toLowerCase() === eq.model.trim().toLowerCase();
-    return matchId || matchApi || matchSerial || matchClientModel;
-  });
-
-  res.json(matchedReports);
-});
-
-app.post('/api/equipments', async (req, res) => {
-  return withLock('equipments', async () => {
-    const equipments = readJson(EQUIPMENTS_FILE, []);
-    const clients = readJson(CLIENTS_FILE, []);
-
-    const clientName = (req.body.client || '').trim();
-    const model = (req.body.model || '').trim();
-    let apiCode = (req.body.apiCode || req.body.serialNumber || '').trim();
-    const serialNumber = (req.body.serialNumber || req.body.apiCode || '').trim();
-
-    if (!clientName || !model || (!serialNumber && !apiCode)) {
-      return res.status(400).json({ error: 'Cliente, modelo y API / ID Máquina son campos obligatorios.' });
-    }
-
-    // Find or link clientId
-    let clientObj = clients.find(c => (req.body.clientId && c.id === req.body.clientId) || c.name.toLowerCase() === clientName.toLowerCase());
-    if (!clientObj) {
-      // Automatically register client if not existing
-      clientObj = {
-        id: `cli-${Date.now()}`,
-        name: clientName,
-        address: req.body.address || '',
-        contact: '',
-        notes: '',
-        isDemo: !!req.body.isDemo
-      };
-      clients.push(clientObj);
-      writeJson(CLIENTS_FILE, clients);
-      await syncClientsToGoogleSheets().catch(() => null);
-    }
-
-    // Generate API Code if not provided
-    if (!apiCode) {
-      const clientPrefix = clientName.substr(0, 3).toUpperCase().replace(/[^A-Z]/g, 'CLI');
-      const count = equipments.filter(e => e.clientId === clientObj.id).length + 1;
-      apiCode = `EQ-${clientPrefix}-${String(count).padStart(3, '0')}`;
-    } else {
-      // Check uniqueness of apiCode
-      const duplicate = equipments.find(e => e.apiCode && e.apiCode.toLowerCase() === apiCode.toLowerCase());
-      if (duplicate) {
-        return res.status(400).json({ error: `El código API/identificador "${apiCode}" ya está en uso por otro equipo.` });
-      }
-    }
-
-    const newEquipment = {
-      id: req.body.id || `eq-${Date.now()}`,
-      clientId: clientObj.id,
-      client: clientObj.name,
-      address: req.body.address || clientObj.address || '',
-      manufacturer: req.body.manufacturer || 'Atlas Copco',
-      model,
-      serialNumber,
-      apiCode,
-      controller: req.body.controller || 'Pendiente de completar',
-      pressure: req.body.pressure || 'Pendiente de completar',
-      airflow: req.body.airflow || 'Pendiente de completar',
-      oilType: req.body.oilType || 'Pendiente de completar',
-      hourMeter: String(req.body.hourMeter !== undefined ? req.body.hourMeter : (req.body.hours !== undefined ? req.body.hours : '0')),
-      hours: Number(req.body.hours !== undefined ? req.body.hours : (req.body.hourMeter !== undefined ? req.body.hourMeter : 0)),
-      maintenanceCycle: req.body.maintenanceCycle || req.body.cycleType || 'ciclo_2000',
-      cycleType: req.body.cycleType || req.body.maintenanceCycle || 'ciclo_2000',
-      alertThresholdHours: Number(req.body.alertThresholdHours) || 200,
-      monthlyAverageHours: req.body.monthlyAverageHours || null,
-      location: req.body.location || 'Sala de Compresores',
-      status: req.body.status || 'Activo',
-      active: req.body.status !== 'Inactivo',
-      notes: req.body.notes || '',
-      isDemo: !!req.body.isDemo,
-      lastMaintenance: req.body.lastMaintenance || null,
-      nextMaintenance: req.body.nextMaintenance || null,
-      readingsHistory: Array.isArray(req.body.readingsHistory) ? req.body.readingsHistory : [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    if (newEquipment.lastMaintenance && !newEquipment.nextMaintenance) {
-      const seq = determineNextMaintenancePlan(newEquipment, newEquipment.lastMaintenance);
-      newEquipment.nextMaintenance = {
-        milestoneHours: seq.nextMilestoneHours,
-        plan: seq.nextPlan
-      };
-    }
-
-    equipments.push(newEquipment);
-    writeJson(EQUIPMENTS_FILE, equipments);
-    await syncEquipmentsToGoogleSheets().catch(() => null);
-    res.status(201).json(newEquipment);
-  });
-});
-
-app.put('/api/equipments/:id', async (req, res) => {
-  return withLock('equipments', async () => {
-    const equipments = readJson(EQUIPMENTS_FILE, []);
-    const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-    const idx = equipments.findIndex(e =>
-      e.id === req.params.id ||
-      (rawParamId && e.id === rawParamId) ||
-      (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
-      (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
-    );
-
-    if (idx === -1) {
-      return res.status(404).json({ error: 'Equipo no encontrado.' });
-    }
-
-    // Check unique apiCode if changed
-    if (req.body.apiCode && req.body.apiCode !== equipments[idx].apiCode) {
-      const duplicate = equipments.find(e =>
-        e.id !== equipments[idx].id &&
-        e.apiCode &&
-        e.apiCode.toLowerCase() === req.body.apiCode.trim().toLowerCase()
-      );
-      if (duplicate) {
-        return res.status(400).json({ error: `El código API "${req.body.apiCode}" ya pertenece a otra máquina.` });
-      }
-    }
-
-    const updatedStatus = req.body.status || equipments[idx].status || 'Activo';
-    const updatedActive = req.body.active !== undefined ? req.body.active : updatedStatus !== 'Inactivo';
-
-    const rawH = req.body.hourMeter !== undefined ? req.body.hourMeter : req.body.hours;
-    let parsedH = rawH !== undefined && rawH !== null && rawH !== '' ? Number(rawH) : null;
-
-    equipments[idx] = {
-      ...equipments[idx],
-      ...req.body,
-      hourMeter: parsedH !== null ? String(parsedH) : (equipments[idx].hourMeter || '0'),
-      hours: parsedH !== null ? parsedH : (Number(equipments[idx].hours) || 0),
-      status: updatedStatus,
-      active: updatedActive,
-      id: equipments[idx].id,
-      updatedAt: new Date().toISOString()
-    };
-
-    if (parsedH !== null && parsedH > 0) {
-      if (!equipments[idx].lastReadingDate) {
-        equipments[idx].lastReadingDate = new Date().toISOString().split('T')[0];
-      }
-      const cycle = equipments[idx].maintenanceCycle || equipments[idx].cycleType || 'ciclo_2000';
-      if (!equipments[idx].nextMaintenance || !equipments[idx].nextMaintenance.milestoneHours) {
-        const seq = determineNextMaintenancePlan(equipments[idx], equipments[idx].lastMaintenance);
-        equipments[idx].nextMaintenance = {
-          milestoneHours: seq.nextMilestoneHours || computeNextMilestoneHours(parsedH, cycle),
-          plan: seq.nextPlan || getPlanForMilestone(seq.nextMilestoneHours || computeNextMilestoneHours(parsedH, cycle), cycle)
-        };
-      }
-    }
-
-    writeJson(EQUIPMENTS_FILE, equipments);
-    await saveEquipmentToGoogleSheets(equipments[idx]).catch(() => null);
-    await syncEquipmentsToGoogleSheets().catch(() => null);
-    res.json(equipments[idx]);
-  });
-});
-
-// Toggle equipment active/inactive status without deleting history
-app.patch('/api/equipments/:id/status', async (req, res) => {
-  return withLock('equipments', async () => {
-    const equipments = readJson(EQUIPMENTS_FILE, []);
-    const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-    const idx = equipments.findIndex(e =>
-      e.id === req.params.id ||
-      (rawParamId && e.id === rawParamId) ||
-      (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
-      (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
-    );
-
-    if (idx === -1) {
-      return res.status(404).json({ error: 'Equipo no encontrado.' });
-    }
-
-    const newStatus = req.body.status || (equipments[idx].status === 'Activo' ? 'Inactivo' : 'Activo');
-    equipments[idx].status = newStatus;
-    equipments[idx].active = newStatus === 'Activo';
-    equipments[idx].updatedAt = new Date().toISOString();
-
-    writeJson(EQUIPMENTS_FILE, equipments);
-    await saveEquipmentToGoogleSheets(equipments[idx]).catch(() => null);
-    await syncEquipmentsToGoogleSheets().catch(() => null);
-    res.json({ message: `Equipo marcado como ${newStatus}`, equipment: equipments[idx] });
-  });
-});
-
-app.delete('/api/equipments/:id', async (req, res) => {
-  return withLock('equipments', async () => {
-    let equipments = readJson(EQUIPMENTS_FILE, []);
-    const rawParamId = req.params.id ? decodeURIComponent(req.params.id).trim() : '';
-    const eq = equipments.find(e =>
-      e.id === req.params.id ||
-      (rawParamId && e.id === rawParamId) ||
-      (e.apiCode && rawParamId && e.apiCode.toLowerCase() === rawParamId.toLowerCase()) ||
-      (e.serialNumber && rawParamId && e.serialNumber.toLowerCase() === rawParamId.toLowerCase())
-    );
-
-    if (!eq) {
-      return res.status(404).json({ error: 'Equipo no encontrado.' });
-    }
-
-    equipments = equipments.filter(e =>
-      e.id !== eq.id &&
-      !(eq.apiCode && e.apiCode && e.apiCode.toLowerCase() === eq.apiCode.toLowerCase())
-    );
-    writeJson(EQUIPMENTS_FILE, equipments);
-    await deleteEquipmentFromGoogleSheets(eq).catch(() => null);
-    await syncEquipmentsToGoogleSheets().catch(() => null);
-    res.json({ success: true, message: 'Equipo eliminado exitosamente.' });
-  });
-});
-
-// Endpoint para borrar/restablecer datos de horómetro de un equipo (dejándolo en "Pendiente de datos")
-app.delete('/api/equipments/:id/horometer', (req, res) => {
-  try {
-    const equipments = readJson(EQUIPMENTS_FILE, []);
-    const eq = equipments.find(e => e.id === req.params.id);
-
-    if (!eq) {
-      return res.status(404).json({ error: 'Equipo no encontrado en el sistema.' });
-    }
-
-    eq.readingsHistory = [];
-    eq.lastMaintenance = null;
-    eq.nextMaintenance = null;
-    eq.lastReadingDate = null;
-    eq.hourMeter = null;
-    eq.hours = null;
-    eq.updatedAt = new Date().toISOString();
-
-    writeJson(EQUIPMENTS_FILE, equipments);
-    console.log(`[Horometers] Horómetro del equipo ${eq.model} (${eq.id}) restablecido a estado pendiente de datos.`);
-    res.json({ success: true, message: 'Horómetro restablecido exitosamente a Pendiente de Datos.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Error al restablecer horómetro: ' + err.message });
-  }
-});
-
-// =========================================================================
-// MÓDULO DE HORÓMETROS Y PRÓXIMOS MANTENIMIENTOS (INDUSTRAC S.A.C.)
-// =========================================================================
+// Alias para compatibilidad de nomenclatura interna
+const authorizeWrite = requireAuth;
+
+// ----------------------------------------------------------------------------
+// HELPERS DE CÁLCULO INDUSTRIAL Y PROGRAMACIÓN DE MANTENIMIENTO
+// ----------------------------------------------------------------------------
 
 function addCalendarMonths(dateStr, monthsToAdd = 3) {
   if (!dateStr) return null;
   const parts = String(dateStr).split('T')[0].split('-');
   if (parts.length < 3) return null;
   const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1; // 0-indexed
+  const month = parseInt(parts[1], 10) - 1;
   const day = parseInt(parts[2], 10);
 
   const targetMonthIndex = month + monthsToAdd;
@@ -1224,14 +95,13 @@ function getPlanForMilestone(milestoneHours, cycle = 'ciclo_2000') {
     if (rem === 3000) return 'Plan A — 3000 horas';
     if (rem === 6000) return 'Plan B — 6000 horas';
     if (rem === 9000) return 'Plan A — 3000 horas';
-    return 'Plan C — 12000 horas'; // rem === 0
+    return 'Plan C — 12000 horas';
   } else {
-    // Standard ciclo_2000
     const rem = m % 8000;
     if (rem === 2000) return 'Plan A — 2000 horas';
     if (rem === 4000) return 'Plan B — 4000 horas';
     if (rem === 6000) return 'Plan A — 2000 horas';
-    return 'Plan C — 8000 horas'; // rem === 0
+    return 'Plan C — 8000 horas';
   }
 }
 
@@ -1257,7 +127,6 @@ function determineNextMaintenancePlan(equipment, lastMaint = null) {
   const lastHours = Number(lm.hourMeter !== undefined && lm.hourMeter !== null && lm.hourMeter !== '' ? lm.hourMeter : (lm.hours || 0));
   const lastPlanLabel = formatMaintenanceTypeLabel(lm.plan);
 
-  // Historial cronológico de mantenimientos previos
   const history = Array.isArray(equipment.readingsHistory) ? [...equipment.readingsHistory] : [];
   const maintHistory = history
     .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
@@ -1267,7 +136,6 @@ function determineNextMaintenancePlan(equipment, lastMaint = null) {
     const step = 3000;
     const nextMilestoneHours = (Math.floor(lastHours / step) + 1) * step;
 
-    // SECUENCIA B: 3,000 h → 6,000 h → 3,000 h → 12,000 h → repetir
     let nextServiceType = '3,000 h';
     let nextPlanName = 'Plan A — 3000 horas';
 
@@ -1326,7 +194,6 @@ function determineNextMaintenancePlan(equipment, lastMaint = null) {
     const step = 2000;
     const nextMilestoneHours = (Math.floor(lastHours / step) + 1) * step;
 
-    // SECUENCIA A: 2,000 h → 4,000 h → 2,000 h → 8,000 h → repetir
     let nextServiceType = '2,000 h';
     let nextPlanName = 'Plan A — 2000 horas';
 
@@ -1408,7 +275,6 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   const history = Array.isArray(equipment.readingsHistory) ? equipment.readingsHistory : [];
   const latestHistoryEntry = history.length > 0 ? history[0] : null;
 
-  // Determinar la última lectura u horómetro válido del equipo
   let lastHoro = null;
   if (lastMaintHours !== null) {
     lastHoro = lastMaintHours;
@@ -1418,11 +284,8 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     lastHoro = Number(latestHistoryEntry.hourMeter !== undefined ? latestHistoryEntry.hourMeter : latestHistoryEntry.hours);
   }
 
-  // Fecha del último servicio o lectura registrada
   let lastReadingDate = lastMaintDate || equipment.lastReadingDate || (latestHistoryEntry ? latestHistoryEntry.date : null);
 
-  // Si no hay configuración previa ni último mantenimiento, pero el equipo tiene horas > 0,
-  // calcular automáticamente el próximo hito y plan según su horómetro actual y ciclo
   if (nextMilestone === null) {
     if (lastMaintHours !== null) {
       nextMilestone = seq.nextMilestoneHours || computeNextMilestoneHours(lastMaintHours, cycle);
@@ -1439,8 +302,6 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     }
   }
 
-  // Si no hay último mantenimiento formal registrado pero el equipo tiene horas > 0,
-  // sugerir el hito previo alcanzado en su ciclo
   if (!lastMaintenanceType && currentHours > 0) {
     const prevMilestone = Math.floor(currentHours / step) * step;
     if (prevMilestone > 0) {
@@ -1494,7 +355,6 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   }
 
   const hoursRemaining = nextMilestone !== null ? (nextMilestone - currentHours) : null;
-  // Regla estricta: calcular fecha trimestral ÚNICAMENTE a partir de un mantenimiento o lectura real válida, jamás de la fecha de creación del registro
   const quarterlyEstimatedDate = lastMaintDate
     ? addCalendarMonths(lastMaintDate, 3)
     : (lastReadingDate ? addCalendarMonths(lastReadingDate, 3) : null);
@@ -1548,71 +408,58 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     simplifiedStatus = 'VENCIDO';
     statusColor = 'crimson';
     statusIcon = '⛔';
+    alertReason = `Vencido por horas (${Math.abs(hoursRemaining)} h exceso) y fecha (${Math.abs(daysUntilTrim)} días vencido).`;
     urgencyRank = 1;
-    const hDiff = Math.abs(hoursRemaining || 0);
-    const dDiff = Math.abs(daysUntilTrim || 0);
-    alertReason = `Vencido crítico: superó el hito de ${nextMilestone ? nextMilestone.toLocaleString() + ' h' : ''} por ${hDiff.toLocaleString()} h y excedió el límite trimestral (${quarterlyEstimatedDate}) por ${dDiff} día(s).`;
-    urgencyScore = 1000 + hDiff + (dDiff * 10);
+    urgencyScore = 100 + Math.abs(hoursRemaining || 0);
   } else if (isHoursOverdue) {
     statusCode = 'overdue_hours';
-    statusLabel = 'Vencido por horas';
+    statusLabel = 'Vencido por horómetro';
+    simplifiedStatus = 'VENCIDO';
+    statusColor = 'crimson';
+    statusIcon = '⛔';
+    alertReason = `Horómetro superó el hito por ${Math.abs(hoursRemaining)} horas.`;
+    urgencyRank = 2;
+    urgencyScore = 90 + Math.abs(hoursRemaining || 0);
+  } else if (isDateOverdue) {
+    statusCode = 'overdue_date';
+    statusLabel = 'Vencido por fecha trimestral';
     simplifiedStatus = 'VENCIDO';
     statusColor = 'red';
     statusIcon = '🔴';
-    urgencyRank = 2;
-    const hDiff = Math.abs(hoursRemaining || 0);
-    alertReason = `Vencido por horas: superó el hito de ${nextMilestone ? nextMilestone.toLocaleString() + ' h' : ''} por ${hDiff.toLocaleString()} h de operación acumulada.`;
-    urgencyScore = 800 + hDiff;
-  } else if (isDateOverdue) {
-    statusCode = 'overdue_date';
-    statusLabel = 'Vencido por fecha';
-    simplifiedStatus = 'VENCIDO';
+    alertReason = `Fecha trimestral superada por ${Math.abs(daysUntilTrim)} días.`;
+    urgencyRank = 3;
+    urgencyScore = 80 + Math.abs(daysUntilTrim || 0);
+  } else if (isHoursNear && isDateNear) {
+    statusCode = 'near_both';
+    statusLabel = 'Próximo por ambos criterios';
+    simplifiedStatus = 'POR VENCER';
     statusColor = 'orange';
     statusIcon = '🟠';
-    urgencyRank = 3;
-    const dDiff = Math.abs(daysUntilTrim || 0);
-    alertReason = `Vencido por fecha: superó el plazo trimestral de 3 meses (${quarterlyEstimatedDate}) por ${dDiff} día(s).`;
-    urgencyScore = 600 + (dDiff * 10);
-  } else if (isHoursNear && isDateNear) {
-    statusCode = 'upcoming_both';
-    statusLabel = 'Próximo por horas y fecha';
-    simplifiedStatus = 'PRÓXIMO';
-    statusColor = 'amber';
-    statusIcon = '🟡';
+    alertReason = `Próximo por horas (${hoursRemaining} h restantes) y fecha (${daysUntilTrim} días restantes).`;
     urgencyRank = 4;
-    alertReason = `Atención preventiva prioritaria: restan solo ${hoursRemaining} h para el hito y quedan ${daysUntilTrim} día(s) para la fecha trimestral.`;
-    urgencyScore = 400 + (alertThreshold - Math.min(hoursRemaining || 0, alertThreshold));
+    urgencyScore = 60 + (alertThreshold - (hoursRemaining || 0));
   } else if (isHoursNear) {
-    statusCode = 'upcoming_hours';
-    statusLabel = 'Próximo por horas';
-    simplifiedStatus = 'PRÓXIMO';
-    statusColor = 'amber';
-    statusIcon = '🟡';
+    statusCode = 'near_hours';
+    statusLabel = 'Próximo por horómetro';
+    simplifiedStatus = 'POR VENCER';
+    statusColor = 'orange';
+    statusIcon = '🟠';
+    alertReason = `Quedan ${hoursRemaining} horas para el hito de ${nextMilestone} h.`;
     urgencyRank = 5;
-    alertReason = `Próximo por horas: restan ${hoursRemaining} h para alcanzar el hito de ${nextMilestone ? nextMilestone.toLocaleString() + ' h' : ''}.`;
-    urgencyScore = 300 + (alertThreshold - Math.min(hoursRemaining || 0, alertThreshold));
+    urgencyScore = 50 + (alertThreshold - (hoursRemaining || 0));
   } else if (isDateNear) {
-    statusCode = 'upcoming_date';
-    statusLabel = 'Próximo por fecha';
-    simplifiedStatus = 'PRÓXIMO';
+    statusCode = 'near_date';
+    statusLabel = 'Próximo por fecha trimestral';
+    simplifiedStatus = 'POR VENCER';
     statusColor = 'amber';
     statusIcon = '🟡';
+    alertReason = `Quedan ${daysUntilTrim} días para la fecha trimestral programada.`;
     urgencyRank = 6;
-    alertReason = `Próximo por fecha: restan ${daysUntilTrim} día(s) para la fecha trimestral recomendada (${quarterlyEstimatedDate}).`;
-    urgencyScore = 200 + (15 - Math.min(daysUntilTrim || 0, 15));
+    urgencyScore = 40 + (15 - (daysUntilTrim || 0));
   } else {
-    // up_to_date
-    statusCode = 'up_to_date';
-    statusLabel = 'Al día';
-    simplifiedStatus = 'AL DÍA';
+    alertReason = hoursRemaining !== null ? `Operando normal. Faltan ${hoursRemaining} h.` : 'Operando dentro de parámetros normales.';
     urgencyRank = 7;
-    alertReason = `Operación al día. Límite trimestral: ${quarterlyEstimatedDate || 'Sin fecha'}.`;
-    urgencyScore = 50;
-  }
-
-  // Solo si no hay fecha de mantenimiento Y el equipo tiene horómetro 0 sin lecturas, es PENDIENTE DE DATOS
-  if (!lastMaintDate && currentHours === 0 && (!history || history.length === 0)) {
-    simplifiedStatus = 'PENDIENTE DE DATOS';
+    urgencyScore = 0;
   }
 
   return {
@@ -1624,9 +471,6 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     nextServiceType,
     statusColor,
     statusIcon,
-    alertReason,
-    urgencyRank,
-    urgencyScore,
     currentHours,
     lastHoro,
     lastReadingDate,
@@ -1642,1364 +486,1034 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     isDateOverdue,
     isHoursNear,
     isDateNear,
-    daysUntilTrim,
     isConfigPending: false,
     cycle,
     alertThreshold,
-    multipleMilestonesWarning
+    multipleMilestonesWarning,
+    alertReason,
+    daysUntilTrim,
+    urgencyRank,
+    urgencyScore
   };
 }
 
-function normalizeStr(str) {
-  if (!str) return '';
-  return String(str)
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '');
-}
-
 function matchReportToEquipment(report, equipments) {
-  if (!report || !Array.isArray(equipments)) return -1;
-  const repSerialNorm = normalizeStr(report.serialNumber);
-  const repApiNorm = normalizeStr(report.apiCode);
-  const repClientNorm = normalizeStr(report.client);
-  const repModelNorm = normalizeStr(report.model);
+  if (!report || !Array.isArray(equipments) || equipments.length === 0) return -1;
 
-  return equipments.findIndex(e => {
-    // 1. Direct equipment ID match
-    if (report.equipmentId && e.id === report.equipmentId) return true;
+  if (report.equipmentId) {
+    const idx = equipments.findIndex(e => e.id === report.equipmentId);
+    if (idx !== -1) return idx;
+  }
 
-    // 2. Normalized API Code match
-    const eApiNorm = normalizeStr(e.apiCode);
-    if (repApiNorm && eApiNorm && repApiNorm === eApiNorm) return true;
+  const clean = str => (str || '').toLowerCase().replace(/[\s\.\-_]/g, '');
 
-    // 3. Normalized Serial Number match
-    const eSerialNorm = normalizeStr(e.serialNumber);
-    if (repSerialNorm && eSerialNorm) {
-      if (repSerialNorm === eSerialNorm) return true;
-      if (repSerialNorm.length >= 4 && eSerialNorm.length >= 4) {
-        if (repSerialNorm.includes(eSerialNorm) || eSerialNorm.includes(repSerialNorm)) return true;
-      }
-    }
+  if (report.apiCode) {
+    const rApi = clean(report.apiCode);
+    const idx = equipments.findIndex(e => clean(e.apiCode) === rApi || clean(e.serialNumber) === rApi);
+    if (idx !== -1) return idx;
+  }
 
-    // 4. Model + Client matching (handles small differences like 'EMUSAS S.A.C.' vs 'EMUSA S.A.C')
-    const eClientNorm = normalizeStr(e.client);
-    const eModelNorm = normalizeStr(e.model);
-    if (repModelNorm && eModelNorm && (repModelNorm === eModelNorm || repModelNorm.includes(eModelNorm) || eModelNorm.includes(repModelNorm))) {
-      if (repClientNorm && eClientNorm && (repClientNorm.includes(eClientNorm) || eClientNorm.includes(repClientNorm))) {
-        return true;
-      }
-    }
+  if (report.serialNumber) {
+    const rSn = clean(report.serialNumber);
+    const idx = equipments.findIndex(e => clean(e.serialNumber) === rSn || clean(e.apiCode) === rSn);
+    if (idx !== -1) return idx;
+  }
 
-    return false;
-  });
+  if (report.client && report.model) {
+    const rCli = clean(report.client);
+    const rMod = clean(report.model);
+    const idx = equipments.findIndex(e => clean(e.client) === rCli && clean(e.model) === rMod);
+    if (idx !== -1) return idx;
+  }
+
+  return -1;
 }
 
-function applyReportToEquipmentHorometer(report) {
+function generateReportPdfFileName(report) {
+  if (!report) return 'Reporte_Servicio.pdf';
+  const clean = str => (str || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const repNum = clean(report.reportNumber || 'REP');
+  const client = clean(report.client || 'CLIENTE');
+  const model = clean(report.model || 'EQUIPO');
+  return `${repNum}_${client}_${model}.pdf`;
+}
+
+async function applyReportToEquipmentHorometer(report) {
   if (!report || report.status !== 'Finalizado') {
     return { success: false, reason: 'El reporte no tiene estado Finalizado.' };
   }
 
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const eqIdx = matchReportToEquipment(report, equipments);
+  try {
+    const equipments = await db.getEquipments();
+    const eqIdx = matchReportToEquipment(report, equipments);
 
-  if (eqIdx === -1) {
-    console.warn(`[Horometers] No se encontró equipo asociado para el reporte ${report.reportNumber} (${report.client} - ${report.model}).`);
-    return { success: false, reason: 'No se encontró equipo en catálogo que coincida con el reporte.' };
-  }
-
-  const eq = equipments[eqIdx];
-  const repHourMeter = Number(report.hourMeter);
-  const validHour = !isNaN(repHourMeter) && repHourMeter >= 0;
-  const currentEqHours = Number(eq.hourMeter) || Number(eq.hours) || 0;
-  const repDate = report.date || new Date().toISOString().split('T')[0];
-  const repNumber = report.reportNumber || '';
-
-  if (!Array.isArray(eq.readingsHistory)) {
-    eq.readingsHistory = [];
-  }
-
-  const latestExistingDate = eq.lastReadingDate || (eq.lastMaintenance && eq.lastMaintenance.date) || '';
-  const isOlderDate = latestExistingDate && repDate < latestExistingDate;
-
-  const repId = report.id || '';
-  const existingIdx = eq.readingsHistory.findIndex(h =>
-    (repId && (h.reportId === repId || h.id === repId || h.id === `hist-boot-${repId}`)) ||
-    (repNumber && h.reportNumber === repNumber)
-  );
-
-  const histEntry = {
-    id: existingIdx !== -1 ? eq.readingsHistory[existingIdx].id : `maint-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-    reportId: repId,
-    date: repDate,
-    hourMeter: validHour ? repHourMeter : currentEqHours,
-    hours: validHour ? repHourMeter : currentEqHours,
-    type: 'mantenimiento',
-    plan: report.maintenanceType || 'Plan A — 2000 horas',
-    reportNumber: repNumber,
-    notes: `Servicio técnico finalizado: ${report.maintenanceType || ''}`,
-    user: report.technician || 'Técnico INDUSTRAC',
-    technician: report.technician || 'Técnico INDUSTRAC'
-  };
-
-  if (existingIdx !== -1) {
-    eq.readingsHistory[existingIdx] = histEntry;
-  } else {
-    eq.readingsHistory.unshift(histEntry);
-  }
-
-  // Regla de negocio: Actualizar horómetro actual si la lectura es válida, igual o superior a la actual y no es una fecha más antigua
-  let horometerUpdated = false;
-  if (validHour && repHourMeter >= currentEqHours && !isOlderDate) {
-    eq.hourMeter = String(repHourMeter);
-    eq.hours = repHourMeter;
-    eq.lastReadingDate = repDate;
-    horometerUpdated = true;
-  }
-
-  // Buscar el mantenimiento cronológicamente más reciente para no sobrescribir con fechas antiguas
-  const allMaints = eq.readingsHistory
-    .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
-    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
-
-  const latestMaint = allMaints[0] || histEntry;
-
-  eq.lastMaintenance = {
-    date: latestMaint.date,
-    hourMeter: Number(latestMaint.hourMeter || latestMaint.hours || 0),
-    plan: latestMaint.plan || report.maintenanceType || 'Plan A — 2000 horas',
-    reportNumber: latestMaint.reportNumber || repNumber,
-    notes: latestMaint.notes || `Reporte técnico ${repNumber} finalizado.`
-  };
-
-  // Sincronizar fecha de última lectura/servicio con la entrada más reciente del historial
-  const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-  if (allReadings.length > 0 && allReadings[0].date) {
-    if (!eq.lastReadingDate || new Date(allReadings[0].date) >= new Date(eq.lastReadingDate)) {
-      eq.lastReadingDate = allReadings[0].date;
+    if (eqIdx === -1) {
+      console.warn(`[Horometers] No se encontró equipo asociado para el reporte ${report.reportNumber} (${report.client} - ${report.model}).`);
+      return { success: false, reason: 'No se encontró equipo en catálogo que coincida con el reporte.' };
     }
-  }
 
-  // Recalcular secuencia y próximo hito a partir del historial acumulado
-  const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-  eq.nextMaintenance = {
-    milestoneHours: seq.nextMilestoneHours,
-    plan: seq.nextPlan
-  };
-  eq.updatedAt = new Date().toISOString();
+    const eq = equipments[eqIdx];
+    const repHourMeter = Number(report.hourMeter);
+    const validHour = !isNaN(repHourMeter) && repHourMeter >= 0;
+    const currentEqHours = Number(eq.hourMeter) || Number(eq.hours) || 0;
+    const repDate = report.date || new Date().toISOString().split('T')[0];
+    const repNumber = report.reportNumber || '';
 
-  writeJson(EQUIPMENTS_FILE, equipments);
-  saveEquipmentToGoogleSheets(eq).catch(() => null);
+    if (!Array.isArray(eq.readingsHistory)) {
+      eq.readingsHistory = [];
+    }
 
-  return {
-    success: true,
-    equipmentId: eq.id,
-    equipmentName: `${eq.client} — ${eq.model} [${eq.apiCode || eq.serialNumber}]`,
-    horometerUpdated,
-    newHorometer: eq.hourMeter,
-    previousHorometer: currentEqHours,
-    lastMaintenance: eq.lastMaintenance,
-    nextMaintenance: eq.nextMaintenance
-  };
-}
+    const latestExistingDate = eq.lastReadingDate || (eq.lastMaintenance && eq.lastMaintenance.date) || '';
+    const isOlderDate = latestExistingDate && repDate < latestExistingDate;
 
-// Desvincula un reporte eliminado de la bitácora del equipo y recalcula su horómetro
-function removeReportFromEquipmentHorometer(report) {
-  if (!report) return;
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const repNum = report.reportNumber || '';
-  const repId = report.id || '';
-  let modified = false;
-
-  equipments.forEach(eq => {
-    if (!Array.isArray(eq.readingsHistory)) return;
-
-    const hadReport = eq.readingsHistory.some(r =>
-      (repNum && r.reportNumber === repNum) ||
-      (repId && (r.id === repId || r.reportId === repId || r.id === `hist-boot-${repId}`))
+    const repId = report.id || '';
+    const existingIdx = eq.readingsHistory.findIndex(h =>
+      (repId && (h.reportId === repId || h.id === repId || h.id === `hist-boot-${repId}`)) ||
+      (repNumber && h.reportNumber === repNumber)
     );
 
-    if (hadReport) {
-      eq.readingsHistory = eq.readingsHistory.filter(r =>
-        !(repNum && r.reportNumber === repNum) &&
-        !(repId && (r.id === repId || r.reportId === repId || r.id === `hist-boot-${repId}`))
-      );
-      modified = true;
+    const histEntry = {
+      id: existingIdx !== -1 ? eq.readingsHistory[existingIdx].id : `maint-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      reportId: repId,
+      date: repDate,
+      hourMeter: validHour ? repHourMeter : currentEqHours,
+      hours: validHour ? repHourMeter : currentEqHours,
+      type: 'mantenimiento',
+      plan: report.maintenanceType || 'Plan A — 2000 horas',
+      reportNumber: repNumber,
+      notes: `Servicio técnico finalizado: ${report.maintenanceType || ''}`,
+      user: report.technician || 'Técnico INDUSTRAC',
+      technician: report.technician || 'Técnico INDUSTRAC'
+    };
 
-      // Recalcular mantenimientos restantes
-      const allMaints = eq.readingsHistory
-        .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
-        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
-
-      if (allMaints.length > 0) {
-        const latestM = allMaints[0];
-        eq.lastMaintenance = {
-          date: latestM.date,
-          hourMeter: Number(latestM.hourMeter || latestM.hours || 0),
-          plan: latestM.plan || 'Plan A — 2000 horas',
-          reportNumber: latestM.reportNumber || '',
-          notes: latestM.notes || 'Actualizado tras eliminar reporte.'
-        };
-        const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        eq.lastReadingDate = allReadings[0]?.date || latestM.date;
-        eq.hourMeter = String(latestM.hourMeter || latestM.hours || 0);
-        eq.hours = Number(eq.hourMeter);
-        const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-        eq.nextMaintenance = {
-          milestoneHours: seq.nextMilestoneHours,
-          plan: seq.nextPlan
-        };
-      } else {
-        eq.lastMaintenance = null;
-        const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        if (allReadings.length > 0) {
-          const latestR = allReadings[0];
-          eq.lastReadingDate = latestR.date;
-          eq.hourMeter = String(latestR.hourMeter || latestR.hours || 0);
-          eq.hours = Number(eq.hourMeter);
-        } else {
-          // Mantener horómetro base original del catálogo si existía
-          const baseHours = Number(eq.hours || eq.hourMeter || 0);
-          if (baseHours > 0) {
-            eq.hourMeter = String(baseHours);
-            eq.hours = baseHours;
-          } else {
-            eq.lastReadingDate = null;
-            eq.hourMeter = '0';
-            eq.hours = 0;
-          }
-        }
-        const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
-        const currentH = Number(eq.hours || eq.hourMeter || 0);
-        if (currentH > 0) {
-          const nextH = computeNextMilestoneHours(currentH, cycle);
-          eq.nextMaintenance = {
-            milestoneHours: nextH,
-            plan: getPlanForMilestone(nextH, cycle)
-          };
-        } else {
-          eq.nextMaintenance = null;
-        }
-      }
-      eq.updatedAt = new Date().toISOString();
+    if (existingIdx !== -1) {
+      eq.readingsHistory[existingIdx] = histEntry;
+    } else {
+      eq.readingsHistory.unshift(histEntry);
     }
-  });
 
-  if (modified) {
-    writeJson(EQUIPMENTS_FILE, equipments);
-    equipments.forEach(eq => saveEquipmentToGoogleSheets(eq).catch(() => null));
+    let horometerUpdated = false;
+    if (validHour && repHourMeter >= currentEqHours && !isOlderDate) {
+      eq.hourMeter = String(repHourMeter);
+      eq.hours = repHourMeter;
+      eq.lastReadingDate = repDate;
+      horometerUpdated = true;
+    }
+
+    const allMaints = eq.readingsHistory
+      .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
+
+    const latestMaint = allMaints[0] || histEntry;
+
+    eq.lastMaintenance = {
+      date: latestMaint.date,
+      hourMeter: Number(latestMaint.hourMeter || latestMaint.hours || 0),
+      plan: latestMaint.plan || report.maintenanceType || 'Plan A — 2000 horas',
+      reportNumber: latestMaint.reportNumber || repNumber,
+      notes: latestMaint.notes || `Reporte técnico ${repNumber} finalizado.`
+    };
+
+    const allReadings = eq.readingsHistory.slice().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    if (allReadings.length > 0 && allReadings[0].date) {
+      if (!eq.lastReadingDate || new Date(allReadings[0].date) >= new Date(eq.lastReadingDate)) {
+        eq.lastReadingDate = allReadings[0].date;
+      }
+    }
+
+    const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
+    eq.nextMaintenance = {
+      milestoneHours: seq.nextMilestoneHours,
+      plan: seq.nextPlan
+    };
+    eq.updatedAt = new Date().toISOString();
+
+    await db.updateEquipment(eq.id, eq);
+
+    return {
+      success: true,
+      equipmentId: eq.id,
+      equipmentName: `${eq.client} — ${eq.model} [${eq.apiCode || eq.serialNumber}]`,
+      horometerUpdated,
+      newHorometer: eq.hourMeter,
+      previousHorometer: currentEqHours
+    };
+  } catch (err) {
+    console.error('[Horometers] Error al aplicar reporte al equipo:', err);
+    return { success: false, reason: err.message };
   }
 }
 
-// Automatically bootstrap equipment maintenance from existing reports if unlinked or outdated
-function bootstrapHorometersFromReports() {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const reports = readJson(REPORTS_FILE, []);
-  let modified = false;
+// ----------------------------------------------------------------------------
+// API ROUTES — AUTENTICACIÓN Y SEGURIDAD DE ACCESO
+// ----------------------------------------------------------------------------
 
-  const finalizedReports = reports
-    .filter(r => r.status === 'Finalizado')
-    .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1';
+    const authResult = await authenticateUser(email, password, ip);
 
-  finalizedReports.forEach(rep => {
-    const eqIdx = matchReportToEquipment(rep, equipments);
-    if (eqIdx !== -1) {
-      const eq = equipments[eqIdx];
-      const repHour = Number(rep.hourMeter);
-      const validH = !isNaN(repHour) && repHour >= 0;
-      const repDate = rep.date || new Date().toISOString().split('T')[0];
-      const repNum = rep.reportNumber || '';
+    if (!authResult.ok) {
+      return res.status(authResult.rateLimited ? 429 : 401).json({
+        ok: false,
+        error: authResult.error
+      });
+    }
 
-      if (!Array.isArray(eq.readingsHistory)) eq.readingsHistory = [];
+    const token = createSessionToken(authResult.user);
+    res.cookie('industrac_session', token, getCookieOptions());
+    return res.json({
+      ok: true,
+      message: 'Inicio de sesión exitoso',
+      user: authResult.user,
+      token
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: 'Error interno de autenticación: ' + err.message });
+  }
+});
 
-      const existsIdx = repNum ? eq.readingsHistory.findIndex(h => h.reportNumber === repNum) : -1;
-      const entry = {
-        id: existsIdx !== -1 ? eq.readingsHistory[existsIdx].id : `hist-boot-${rep.id || Date.now()}`,
-        date: repDate,
-        hourMeter: validH ? repHour : (Number(eq.hourMeter) || 0),
-        hours: validH ? repHour : (Number(eq.hourMeter) || 0),
-        type: 'mantenimiento',
-        plan: rep.maintenanceType || 'Plan A — 2000 horas',
-        reportNumber: repNum,
-        notes: `Historial verificado: ${rep.maintenanceType || ''}`,
-        user: rep.technician || 'Técnico INDUSTRAC'
-      };
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('industrac_session', { path: '/' });
+  return res.json({ ok: true, message: 'Sesión cerrada correctamente.' });
+});
 
-      if (existsIdx !== -1) {
-        eq.readingsHistory[existsIdx] = entry;
-      } else {
-        eq.readingsHistory.push(entry);
+app.get('/api/auth/me', optionalAuth, (req, res) => {
+  if (req.user) {
+    return res.json({
+      authenticated: true,
+      user: req.user
+    });
+  }
+  return res.json({
+    authenticated: false,
+    user: null
+  });
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — DIAGNÓSTICO Y SALUD
+// ----------------------------------------------------------------------------
+
+app.get('/api/health', async (req, res) => {
+  try {
+    const conn = await db.testConnection();
+    res.json({
+      status: 'ok',
+      engine: 'Supabase PostgreSQL',
+      supabaseConnected: conn.ok,
+      error: conn.error || null,
+      serverTime: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — NUMERACIÓN ATÓMICA DE REPORTES
+// ----------------------------------------------------------------------------
+
+app.get(['/api/next-report-number', '/api/reports/next-number'], requireAuth, async (req, res) => {
+  try {
+    const peek = req.query.peek !== 'false';
+    const number = await db.getNextReportNumber(peek);
+    res.json({ reportNumber: number });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al generar número de reporte: ' + err.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — REPORTES
+// ----------------------------------------------------------------------------
+
+app.get('/api/reports', requireAuth, async (req, res) => {
+  try {
+    const { status, summary } = req.query;
+    const reports = await db.getReports({ status, summary });
+    res.json(reports);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al consultar reportes: ' + err.message });
+  }
+});
+
+app.get('/api/reports/:id', requireAuth, async (req, res) => {
+  try {
+    const report = await db.getReportById(req.params.id);
+    if (!report) {
+      return res.status(404).json({ error: 'Reporte no encontrado' });
+    }
+    res.json(report);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al obtener reporte: ' + err.message });
+  }
+});
+
+app.post('/api/reports', authorizeWrite, async (req, res) => {
+  try {
+    const reportData = req.body;
+    const clientName = (reportData.client || '').trim();
+    if (!clientName) {
+      return res.status(400).json({ error: 'El nombre del cliente es obligatorio para registrar un reporte.' });
+    }
+
+    // Idempotencia: Si ya existe un reporte con ese ID o número, actualizarlo
+    if (reportData.id) {
+      const existing = await db.getReportById(reportData.id);
+      if (existing) {
+        const updated = await db.updateReport(reportData.id, reportData);
+        let horometerUpdate = null;
+        if (updated.status === 'Finalizado') {
+          horometerUpdate = await applyReportToEquipmentHorometer(updated);
+        }
+        return res.status(200).json({ ...updated, horometerUpdate, idempotent: true });
       }
+    }
 
-      // Horómetro solo avanza o se mantiene, nunca disminuye
-      const currentH = Number(eq.hours || eq.hourMeter || 0);
-      if (validH && repHour >= currentH) {
-        eq.hourMeter = String(repHour);
-        eq.hours = repHour;
-        eq.lastReadingDate = repDate;
+    // Si el número de reporte no viene definido o es un placeholder, generar el correlativo oficial consumiéndolo
+    let reportNumber = (reportData.reportNumber || '').trim();
+    if (!reportNumber || reportNumber === 'AUTO' || reportNumber.startsWith('REP-2026-...')) {
+      reportNumber = await db.getNextReportNumber(false);
+    }
+
+    const newReport = {
+      ...reportData,
+      id: reportData.id || `rep-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      reportNumber,
+      status: reportData.status || 'Finalizado'
+    };
+
+    const saved = await db.createReport(newReport);
+    let horometerUpdate = null;
+    if (saved.status === 'Finalizado') {
+      horometerUpdate = await applyReportToEquipmentHorometer(saved);
+    }
+
+    res.status(201).json({ ...saved, horometerUpdate });
+  } catch (err) {
+    console.error('[Reports] Error al crear reporte:', err);
+    res.status(err.status || 500).json({ error: 'Error al guardar reporte: ' + err.message });
+  }
+});
+
+app.put('/api/reports/:id', authorizeWrite, async (req, res) => {
+  try {
+    const existing = await db.getReportById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Reporte no encontrado en la base de datos.' });
+    }
+
+    const updated = await db.updateReport(req.params.id, req.body);
+    let horometerUpdate = null;
+    if (updated.status === 'Finalizado') {
+      horometerUpdate = await applyReportToEquipmentHorometer(updated);
+    }
+
+    res.json({ ...updated, horometerUpdate });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al actualizar reporte: ' + err.message });
+  }
+});
+
+app.delete('/api/reports/:id', authorizeWrite, async (req, res) => {
+  try {
+    const rawId = req.params.id ? String(req.params.id).trim() : '';
+    if (!rawId) {
+      return res.status(400).json({ error: 'ID de reporte inválido o vacío' });
+    }
+
+    const existing = await db.getReportById(rawId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Reporte no encontrado en la base de datos.' });
+    }
+
+    await db.deleteReport(existing.id);
+
+    // Eliminar archivo PDF temporal si existe
+    try {
+      const pdfPath = path.join(PDFS_DIR, `${existing.id}.pdf`);
+      if (fs.existsSync(pdfPath)) {
+        fs.unlinkSync(pdfPath);
       }
+    } catch (e) { }
 
-      const allMaints = eq.readingsHistory
-        .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
-        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
+    res.json({ success: true, message: 'Reporte eliminado exitosamente de Supabase.' });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al eliminar reporte: ' + err.message });
+  }
+});
 
-      const latestM = allMaints[0] || entry;
-      eq.lastMaintenance = {
-        date: latestM.date,
-        hourMeter: Number(latestM.hourMeter || latestM.hours || 0),
-        plan: latestM.plan || rep.maintenanceType || 'Plan A — 2000 horas',
-        reportNumber: latestM.reportNumber || repNum,
-        notes: latestM.notes || 'Vinculado automáticamente desde historial de reportes.'
-      };
+// ----------------------------------------------------------------------------
+// API ROUTES — GENERACIÓN DE PDF Y SUBIDA A GOOGLE DRIVE
+// ----------------------------------------------------------------------------
 
-      const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-      eq.nextMaintenance = {
+app.post('/api/reports/:id/pdf', requireAuth, async (req, res) => {
+  try {
+    const { pdfBase64, fileName: requestedFileName } = req.body;
+
+    if (!pdfBase64) {
+      return res.status(400).json({ error: 'Se requiere el contenido del PDF en formato base64.' });
+    }
+
+    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '').trim();
+    const buffer = Buffer.from(cleanBase64, 'base64');
+
+    const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
+
+    try {
+      if (!fs.existsSync(PDFS_DIR)) {
+        fs.mkdirSync(PDFS_DIR, { recursive: true });
+      }
+      fs.writeFileSync(filePath, buffer);
+    } catch (fsErr) {
+      try {
+        fs.writeFileSync(path.join('/tmp', `${safeId}.pdf`), buffer);
+      } catch (tmpErr) { }
+    }
+
+    const report = await db.getReportById(req.params.id);
+    const fileName = requestedFileName || generateReportPdfFileName(report);
+
+    let driveResult = null;
+    const driveWebhookUrl = (process.env.GOOGLE_DRIVE_WEBHOOK_URL || process.env.GOOGLE_SHEETS_WEBHOOK_URL || '').trim();
+
+    if (driveWebhookUrl) {
+      try {
+        const repNum = report && report.reportNumber ? report.reportNumber : req.params.id;
+        console.log(`[Google Drive] Subiendo PDF "${fileName}" al Drive corporativo...`);
+
+        const driveRes = await fetch(driveWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload_pdf_drive',
+            folderName: 'PDF_REPORTES2027',
+            reportId: req.params.id,
+            reportNumber: repNum,
+            fileName: fileName,
+            pdfBase64: cleanBase64
+          })
+        });
+
+        const driveData = await driveRes.json();
+        if (driveData && driveData.status === 'success') {
+          driveResult = driveData;
+          console.log(`[Google Drive] ¡Subida exitosa a Drive! URL: ${driveData.driveViewUrl}`);
+          if (report) {
+            await db.updateReportDriveUrls(req.params.id, driveData.driveViewUrl, driveData.driveDownloadUrl);
+          }
+        } else {
+          console.warn('[Google Drive] Respuesta de Apps Script:', driveData);
+        }
+      } catch (eDrive) {
+        console.warn('[Google Drive] Aviso: no se pudo sincronizar a Google Drive:', eDrive.message);
+      }
+    }
+
+    res.json({
+      message: driveResult ? 'PDF guardado exitosamente en Google Drive' : 'PDF procesado exitosamente',
+      fileName: fileName,
+      downloadUrl: `/api/reports/${req.params.id}/pdf`,
+      driveUrl: driveResult?.driveViewUrl || (report?.pdfDriveUrl || null),
+      driveDownloadUrl: driveResult?.driveDownloadUrl || (report?.pdfDriveDownloadUrl || null)
+    });
+  } catch (err) {
+    console.error('Error guardando PDF:', err);
+    res.status(500).json({ error: 'Error al procesar archivo PDF: ' + err.message });
+  }
+});
+
+app.get('/api/reports/:id/pdf', requireAuth, async (req, res) => {
+  const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+  const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
+
+  let targetPath = filePath;
+  if (!fs.existsSync(filePath)) {
+    const tmpPath = path.join('/tmp', `${safeId}.pdf`);
+    if (fs.existsSync(tmpPath)) {
+      targetPath = tmpPath;
+    } else {
+      return res.status(404).send('Archivo PDF no encontrado en el servidor. Debe generarlo previamente.');
+    }
+  }
+
+  const report = await db.getReportById(req.params.id);
+  const downloadName = generateReportPdfFileName(report);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+  res.sendFile(targetPath);
+});
+
+app.get('/api/reports/:id/pdf-view', (req, res) => {
+  const safeId = path.basename(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+  const filePath = path.join(PDFS_DIR, `${safeId}.pdf`);
+
+  let targetPath = filePath;
+  if (!fs.existsSync(filePath)) {
+    const tmpPath = path.join('/tmp', `${safeId}.pdf`);
+    if (fs.existsSync(tmpPath)) {
+      targetPath = tmpPath;
+    } else {
+      return res.status(404).send('Archivo PDF no encontrado en el servidor.');
+    }
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline');
+  res.sendFile(targetPath);
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — CLIENTES
+// ----------------------------------------------------------------------------
+
+app.get('/api/clients', requireAuth, async (req, res) => {
+  try {
+    const clients = await db.getClients();
+    res.json(clients);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al obtener clientes: ' + err.message });
+  }
+});
+
+app.post('/api/clients', authorizeWrite, async (req, res) => {
+  try {
+    const { name, address, contact, notes, isDemo } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'El nombre del cliente es obligatorio.' });
+    }
+
+    const newClient = {
+      id: req.body.id || `cli-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      name: name.trim(),
+      address: address ? address.trim() : '',
+      contact: contact ? contact.trim() : '',
+      notes: notes ? notes.trim() : '',
+      isDemo: Boolean(isDemo)
+    };
+
+    const saved = await db.createClient(newClient);
+    res.status(201).json({ message: 'Cliente registrado exitosamente en Supabase.', client: saved });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al registrar cliente: ' + err.message });
+  }
+});
+
+app.put('/api/clients/:id', authorizeWrite, async (req, res) => {
+  try {
+    const { name, address, contact, notes, isDemo } = req.body;
+    const existing = await db.getClientById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Cliente no encontrado en Supabase.' });
+    }
+
+    const updated = await db.updateClient(req.params.id, {
+      ...existing,
+      name: name !== undefined ? name.trim() : existing.name,
+      address: address !== undefined ? address.trim() : existing.address,
+      contact: contact !== undefined ? contact.trim() : existing.contact,
+      notes: notes !== undefined ? notes.trim() : existing.notes,
+      isDemo: isDemo !== undefined ? Boolean(isDemo) : existing.isDemo
+    });
+
+    res.json({ message: 'Cliente actualizado exitosamente.', client: updated });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al actualizar cliente: ' + err.message });
+  }
+});
+
+app.delete('/api/clients/:id', authorizeWrite, async (req, res) => {
+  try {
+    const existing = await db.getClientById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Cliente no encontrado en Supabase.' });
+    }
+
+    await db.deleteClient(req.params.id);
+
+    // Si se solicitó eliminar equipos asociados
+    if (req.query.removeEquipments === 'true') {
+      const equipments = await db.getEquipments();
+      const clientEqs = equipments.filter(e => e.clientId === req.params.id);
+      for (const eq of clientEqs) {
+        await db.deleteEquipment(eq.id);
+      }
+    }
+
+    res.json({ success: true, message: 'Cliente eliminado exitosamente.' });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al eliminar cliente: ' + err.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — EQUIPOS
+// ----------------------------------------------------------------------------
+
+app.get('/api/equipments', requireAuth, async (req, res) => {
+  try {
+    const equipments = await db.getEquipments();
+    res.json(equipments);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al obtener equipos: ' + err.message });
+  }
+});
+
+app.get('/api/equipments/:id', requireAuth, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado en Supabase.' });
+    }
+    res.json(eq);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al consultar equipo: ' + err.message });
+  }
+});
+
+app.get('/api/equipments/:id/reports', requireAuth, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+
+    const reports = await db.getReports({ status: 'Finalizado' });
+    const clean = str => (str || '').toLowerCase().replace(/[\s\.\-_]/g, '');
+
+    const filtered = reports.filter(r =>
+      r.equipmentId === eq.id ||
+      (r.apiCode && clean(r.apiCode) === clean(eq.apiCode)) ||
+      (r.serialNumber && clean(r.serialNumber) === clean(eq.serialNumber)) ||
+      (clean(r.client) === clean(eq.client) && clean(r.model) === clean(eq.model))
+    );
+
+    res.json(filtered);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al obtener reportes del equipo: ' + err.message });
+  }
+});
+
+app.post('/api/equipments', authorizeWrite, async (req, res) => {
+  try {
+    const { model, client, clientId } = req.body;
+    if (!model || !model.trim() || !client || !client.trim()) {
+      return res.status(400).json({ error: 'El Modelo y el Cliente son obligatorios para registrar un equipo.' });
+    }
+
+    const newEquipment = {
+      ...req.body,
+      id: req.body.id || `eq-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      model: model.trim(),
+      client: client.trim(),
+      clientId: clientId || null,
+      status: req.body.status || 'Activo',
+      active: req.body.active !== false
+    };
+
+    const seq = determineNextMaintenancePlan(newEquipment);
+    if (!newEquipment.nextMaintenance || !newEquipment.nextMaintenance.milestoneHours) {
+      newEquipment.nextMaintenance = {
         milestoneHours: seq.nextMilestoneHours,
         plan: seq.nextPlan
       };
-      modified = true;
     }
-  });
 
-  // Sincronizar y asegurar coherencia de horómetros base para equipos sin mantenimientos aún registrados
-  equipments.forEach(eq => {
-    const h = Number(eq.hourMeter !== undefined && eq.hourMeter !== null && eq.hourMeter !== '' ? eq.hourMeter : (eq.hours || 0)) || 0;
-    if (h > 0) {
-      if (eq.hours === undefined || eq.hours === null || eq.hours === 0) {
-        eq.hours = h;
-        modified = true;
-      }
-      if (!eq.lastReadingDate) {
-        eq.lastReadingDate = eq.createdAt?.split('T')[0] || eq.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0];
-        modified = true;
-      }
-      if (!eq.nextMaintenance || !eq.nextMaintenance.milestoneHours) {
-        const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
-        const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-        eq.nextMaintenance = {
-          milestoneHours: seq.nextMilestoneHours || computeNextMilestoneHours(h, cycle),
-          plan: seq.nextPlan || getPlanForMilestone(seq.nextMilestoneHours || computeNextMilestoneHours(h, cycle), cycle)
-        };
-        modified = true;
-      }
+    const saved = await db.createEquipment(newEquipment);
+    res.status(201).json({ message: 'Equipo registrado exitosamente en Supabase.', equipment: saved });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al registrar equipo: ' + err.message });
+  }
+});
+
+app.put('/api/equipments/:id', authorizeWrite, async (req, res) => {
+  try {
+    const existing = await db.getEquipmentById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Equipo no encontrado en Supabase.' });
     }
-  });
 
-  if (modified) {
-    writeJson(EQUIPMENTS_FILE, equipments);
-  }
-}
-
-// Run bootstrap once
-bootstrapHorometersFromReports();
-
-// --- MONTHLY MAINTENANCE PROJECTION ENGINE ---
-function computeMonthlyMaintenanceProjection(enrichedList, todayStr = null) {
-  const today = todayStr ? new Date(todayStr + 'T00:00:00') : new Date();
-  const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
-  const fullMonthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-
-  const buckets = [];
-
-  // Bucket 0: Vencidos / Inmediatos
-  buckets.push({
-    monthKey: 'vencidos',
-    label: 'Vencidos',
-    fullLabel: 'Vencidos / Atención Inmediata',
-    subLabel: 'Superaron hito u horizonte trimestral',
-    year: today.getFullYear(),
-    monthNumber: today.getMonth() + 1,
-    isOverdueBucket: true,
-    isCurrentMonth: false,
-    total: 0,
-    planA: 0,
-    planB: 0,
-    planC: 0,
-    cycle2k: 0,
-    cycle3k: 0,
-    equipmentIds: [],
-    equipments: []
-  });
-
-  const curYear = today.getFullYear();
-  const curMonth = today.getMonth(); // 0-indexed
-  const monthKeys = [];
-
-  for (let i = 0; i < 6; i++) {
-    const targetDate = new Date(curYear, curMonth + i, 1);
-    const y = targetDate.getFullYear();
-    const m = targetDate.getMonth();
-    const key = `${y}-${String(m + 1).padStart(2, '0')}`;
-    monthKeys.push(key);
-    buckets.push({
-      monthKey: key,
-      label: `${monthNames[m]} ${y}`,
-      fullLabel: `${fullMonthNames[m]} ${y}`,
-      subLabel: i === 0 ? 'Mes en curso' : `Proyección ${fullMonthNames[m]}`,
-      year: y,
-      monthNumber: m + 1,
-      isOverdueBucket: false,
-      isCurrentMonth: i === 0,
-      total: 0,
-      planA: 0,
-      planB: 0,
-      planC: 0,
-      cycle2k: 0,
-      cycle3k: 0,
-      equipmentIds: [],
-      equipments: []
-    });
-  }
-
-  // Bucket 7: Mantenimientos posteriores (+6m)
-  const nextTargetDate = new Date(curYear, curMonth + 6, 1);
-  const postYear = nextTargetDate.getFullYear();
-  const postMonth = nextTargetDate.getMonth();
-  buckets.push({
-    monthKey: 'posterior',
-    label: `${monthNames[postMonth]} ${postYear}+`,
-    fullLabel: `Posterior (${monthNames[postMonth]} ${postYear} en adelante)`,
-    subLabel: 'Mantenimientos en horizontes lejanos',
-    year: postYear,
-    monthNumber: postMonth + 1,
-    isOverdueBucket: false,
-    isCurrentMonth: false,
-    total: 0,
-    planA: 0,
-    planB: 0,
-    planC: 0,
-    cycle2k: 0,
-    cycle3k: 0,
-    equipmentIds: [],
-    equipments: []
-  });
-
-  // Bucket 8: Sin previsión (pending_config or no date)
-  const pendingBucket = {
-    monthKey: 'sin_prevision',
-    label: 'Sin previsión',
-    fullLabel: 'Equipos sin previsión fiable',
-    subLabel: 'Requieren configurar línea base o ciclo',
-    year: null,
-    monthNumber: null,
-    isOverdueBucket: false,
-    isCurrentMonth: false,
-    total: 0,
-    planA: 0,
-    planB: 0,
-    planC: 0,
-    cycle2k: 0,
-    cycle3k: 0,
-    equipmentIds: [],
-    equipments: []
-  };
-
-  // Group each equipment into EXACTLY ONE bucket (no duplicate counting)
-  enrichedList.forEach(eq => {
-    const briefItem = {
-      id: eq.id,
-      client: eq.client,
-      model: eq.model,
-      apiCode: eq.apiCode,
-      serialNumber: eq.serialNumber,
-      nextPlan: eq.nextPlan,
-      nextMilestoneHours: eq.nextMilestoneHours,
-      currentHours: eq.currentHours,
-      hoursRemaining: eq.hoursRemaining,
-      quarterlyEstimatedDate: eq.quarterlyEstimatedDate,
-      usageEstimatedDate: eq.usageEstimatedDate,
-      status: eq.status,
-      statusLabel: eq.statusLabel,
-      statusClass: eq.statusClass,
-      cycleType: eq.cycleType,
-      isDemo: !!eq.isDemo
+    const updatedData = {
+      ...existing,
+      ...req.body,
+      id: existing.id
     };
 
-    const addEqToBucket = (b) => {
-      b.total++;
-      b.equipmentIds.push(eq.id);
-      b.equipments.push(briefItem);
-
-      const planName = (eq.nextPlan || '').toLowerCase();
-      if (planName.includes('plan a')) b.planA++;
-      else if (planName.includes('plan b')) b.planB++;
-      else if (planName.includes('plan c')) b.planC++;
-      else b.planA++;
-
-      if (eq.cycleType === 'ciclo_3000') b.cycle3k++;
-      else b.cycle2k++;
-    };
-
-    if (eq.status === 'pending_config') {
-      addEqToBucket(pendingBucket);
-      return;
-    }
-
-    // 1. If overdue by either or both criteria -> Vencidos
-    if (eq.isOverdueHours || eq.isOverdueDate) {
-      addEqToBucket(buckets[0]);
-      return;
-    }
-
-    // 2. Projected date: earliest between usageEstimatedDate and quarterlyEstimatedDate
-    let projectedDateStr = null;
-    if (eq.usageEstimatedDate && eq.quarterlyEstimatedDate) {
-      projectedDateStr = eq.usageEstimatedDate < eq.quarterlyEstimatedDate ? eq.usageEstimatedDate : eq.quarterlyEstimatedDate;
-    } else {
-      projectedDateStr = eq.quarterlyEstimatedDate || eq.usageEstimatedDate || null;
-    }
-
-    if (!projectedDateStr) {
-      addEqToBucket(pendingBucket);
-      return;
-    }
-
-    const projMonthKey = projectedDateStr.substring(0, 7); // YYYY-MM
-    const matchedBucket = buckets.find(b => b.monthKey === projMonthKey);
-
-    if (matchedBucket) {
-      addEqToBucket(matchedBucket);
-    } else if (projMonthKey < monthKeys[0]) {
-      addEqToBucket(buckets[0]);
-    } else {
-      const postB = buckets.find(b => b.monthKey === 'posterior');
-      if (postB) addEqToBucket(postB);
-      else addEqToBucket(pendingBucket);
-    }
-  });
-
-  buckets.push(pendingBucket);
-
-  return {
-    disclaimer: 'Las fechas proyectadas corresponden a estimaciones preventivas basadas en el límite trimestral (3 meses) y/o tasa de uso por horómetro. No representan citas comerciales confirmadas.',
-    generatedAt: new Date().toISOString(),
-    buckets
-  };
-}
-
-// --- HOROMETERS API ROUTES ---
-
-// 1. Get Horometers Dashboard & Equipment Metrics
-app.get('/api/horometers', (req, res) => {
-  const allEquipments = readJson(EQUIPMENTS_FILE, []);
-  const today = req.query.date || new Date().toISOString().split('T')[0];
-  const mode = req.query.mode === 'demo' ? 'demo' : (req.query.mode === 'all' ? 'all' : 'real');
-
-  const filteredEquipments = mode === 'demo'
-    ? allEquipments.filter(e => !!e.isDemo)
-    : (mode === 'all' ? allEquipments : allEquipments.filter(e => !e.isDemo));
-  const realEquipmentsCount = allEquipments.filter(e => !e.isDemo).length;
-  const demoEquipmentsCount = allEquipments.filter(e => !!e.isDemo).length;
-
-  let totalEquipments = filteredEquipments.length;
-  let upToDate = 0;
-  let upcoming = 0;
-  let overdueHours = 0;
-  let overdueDate = 0;
-  let overdueBoth = 0;
-  let pendingConfig = 0;
-
-  const enriched = filteredEquipments.map(eq => {
-    const metrics = calculateEquipmentHorometerMetrics(eq, today);
-    if (metrics.statusCode === 'pending_config') pendingConfig++;
-    else if (metrics.statusCode === 'overdue_both') overdueBoth++;
-    else if (metrics.statusCode === 'overdue_hours') overdueHours++;
-    else if (metrics.statusCode === 'overdue_date') overdueDate++;
-    else if (metrics.statusCode.startsWith('upcoming')) upcoming++;
-    else upToDate++;
-
-    const statusClass = 'status-' + (metrics.statusCode || 'pending_config').replace(/_/g, '-');
-
-    return {
-      ...eq,
-      metrics,
-      status: metrics.statusCode,
-      statusLabel: metrics.statusLabel,
-      simplifiedStatus: metrics.simplifiedStatus,
-      lastServiceDate: metrics.lastMaintDate || metrics.lastReadingDate || null,
-      lastHorometer: metrics.lastMaintHours !== null ? metrics.lastMaintHours : (metrics.lastHoro !== null ? metrics.lastHoro : (metrics.currentHours > 0 ? metrics.currentHours : null)),
-      lastMaintenanceType: metrics.lastMaintenanceType,
-      nextServiceType: metrics.nextServiceType,
-      estimatedDate: metrics.quarterlyEstimatedDate,
-      statusClass,
-      statusColor: metrics.statusColor,
-      statusIcon: metrics.statusIcon,
-      alertReason: metrics.alertReason,
-      urgencyRank: metrics.urgencyRank,
-      urgencyScore: metrics.urgencyScore,
-      operationalStatus: eq.status,
-      currentHours: metrics.currentHours,
-      lastMaintDate: metrics.lastMaintDate,
-      lastMaintHours: metrics.lastMaintHours,
-      lastPlan: metrics.lastMaintPlan,
-      nextMilestoneHours: metrics.nextMilestone,
-      nextPlan: metrics.nextPlan,
-      hoursRemaining: metrics.hoursRemaining,
-      quarterlyEstimatedDate: metrics.quarterlyEstimatedDate,
-      usageEstimatedDate: metrics.usageEstimatedDate,
-      daysToQuarterly: metrics.daysUntilTrim,
-      isOverdueHours: metrics.isHoursOverdue,
-      isOverdueDate: metrics.isDateOverdue,
-      isUpcomingHours: metrics.isHoursNear,
-      isUpcomingDate: metrics.isDateNear,
-      cycleType: metrics.cycle,
-      alertThresholdHours: metrics.alertThreshold,
-      monthlyAverageHours: Number(eq.monthlyAverageHours) || null,
-      isDemo: !!eq.isDemo
-    };
-  });
-
-  // Compute Priority Attention list (Machines needing attention first, ordered by urgency)
-  const priorityAttention = enriched
-    .filter(eq => eq.status !== 'pending_config' && eq.status !== 'up_to_date')
-    .sort((a, b) => (a.urgencyRank - b.urgencyRank) || (b.urgencyScore - a.urgencyScore) || (a.hoursRemaining - b.hoursRemaining));
-
-  // If there are few priority items and some up_to_date machines exist, add top nearest
-  if (priorityAttention.length < 4) {
-    const upcomingNormal = enriched
-      .filter(eq => eq.status === 'up_to_date' && eq.hoursRemaining !== null)
-      .sort((a, b) => a.hoursRemaining - b.hoursRemaining)
-      .slice(0, 4 - priorityAttention.length);
-    priorityAttention.push(...upcomingNormal);
-  }
-
-  // Compute Monthly Maintenance Projection
-  const monthlyProjection = computeMonthlyMaintenanceProjection(enriched, today);
-
-  res.json({
-    mode,
-    realEquipmentsCount,
-    demoEquipmentsCount,
-    summary: {
-      total: totalEquipments,
-      totalEquipments,
-      upToDate,
-      upcomingTotal: upcoming,
-      upcoming,
-      overdueHours,
-      overdueDate,
-      overdueBoth,
-      pendingConfig
-    },
-    priorityAttention,
-    monthlyProjection,
-    equipments: enriched
-  });
-});
-
-// 2. Register New Horometer Reading
-app.post('/api/equipments/:id/readings', (req, res) => {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const idx = equipments.findIndex(e => e.id === req.params.id);
-
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
-  }
-
-  const eq = equipments[idx];
-  const newHours = Number(req.body.hourMeter !== undefined ? req.body.hourMeter : req.body.hours);
-  const currentHours = Number(eq.hourMeter !== undefined ? eq.hourMeter : (eq.hours || 0));
-  const readingDate = req.body.date || new Date().toISOString().split('T')[0];
-  const notes = (req.body.notes || '').trim();
-  const user = (req.body.user || req.body.registeredBy || 'Administrador').trim();
-  const confirmLower = !!(req.body.confirmLower || req.body.confirmed);
-
-  if (isNaN(newHours) || newHours < 0) {
-    return res.status(400).json({ error: 'La lectura del horómetro debe ser un número positivo mayor o igual a 0.' });
-  }
-
-  let warning = null;
-  // Warn if new reading is lower than previous reading
-  if (newHours < currentHours) {
-    warning = `La lectura ingresada (${newHours} h) es menor que la lectura actual registrada (${currentHours} h).`;
-  }
-
-  if (!Array.isArray(eq.readingsHistory)) {
-    eq.readingsHistory = [];
-  }
-
-  // Update current hours in both field conventions
-  eq.hourMeter = String(newHours);
-  eq.hours = newHours;
-  eq.lastReadingDate = readingDate;
-  eq.updatedAt = new Date().toISOString();
-
-  // Prepend reading to history
-  eq.readingsHistory.unshift({
-    id: `read-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-    date: readingDate,
-    hourMeter: newHours,
-    hours: newHours,
-    type: 'reading',
-    plan: null,
-    reportNumber: null,
-    notes: notes || 'Lectura periódica de horómetro.',
-    registeredBy: user,
-    user: user
-  });
-
-  // Recalcular o avanzar próximo hito si no estaba configurado o fue alcanzado
-  const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
-  const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-  eq.nextMaintenance = {
-    milestoneHours: seq.nextMilestoneHours || computeNextMilestoneHours(newHours, cycle),
-    plan: seq.nextPlan || getPlanForMilestone(seq.nextMilestoneHours || computeNextMilestoneHours(newHours, cycle), cycle)
-  };
-
-  writeJson(EQUIPMENTS_FILE, equipments);
-  saveEquipmentToGoogleSheets(eq).catch(() => null);
-
-  const metrics = calculateEquipmentHorometerMetrics(eq);
-  res.json({
-    message: 'Lectura de horómetro registrada exitosamente.',
-    warning,
-    equipment: eq,
-    metrics
-  });
-});
-
-// 3. Register Completed Maintenance Service
-app.post('/api/equipments/:id/maintenance', (req, res) => {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const idx = equipments.findIndex(e => e.id === req.params.id);
-
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
-  }
-
-  const eq = equipments[idx];
-  const maintDate = req.body.date || new Date().toISOString().split('T')[0];
-  const rawHours = req.body.hourMeter !== undefined ? req.body.hourMeter : req.body.hours;
-  const maintHours = Number(rawHours !== undefined && rawHours !== '' ? rawHours : (eq.hourMeter || eq.hours || 0));
-  const plan = req.body.plan || 'Plan A — 2000 horas';
-  const reportNumber = (req.body.reportNumber || '').trim();
-  const notes = (req.body.notes || '').trim();
-  const user = (req.body.user || req.body.technician || 'Técnico INDUSTRAC').trim();
-  const cycle = eq.maintenanceCycle || eq.cycleType || 'ciclo_2000';
-
-  if (isNaN(maintHours) || maintHours < 0) {
-    return res.status(400).json({ error: 'La lectura del horómetro en mantenimiento debe ser un número válido.' });
-  }
-
-  if (maintHours >= (Number(eq.hourMeter || eq.hours) || 0)) {
-    eq.hourMeter = String(maintHours);
-    eq.hours = maintHours;
-    eq.lastReadingDate = maintDate;
-  }
-
-  if (!Array.isArray(eq.readingsHistory)) {
-    eq.readingsHistory = [];
-  }
-
-  eq.readingsHistory.unshift({
-    id: `maint-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-    date: maintDate,
-    hourMeter: maintHours,
-    hours: maintHours,
-    type: 'maintenance',
-    plan: plan,
-    reportNumber: reportNumber,
-    notes: notes || `Mantenimiento ${plan} ejecutado.`,
-    technician: user,
-    user: user
-  });
-
-  eq.lastMaintenance = {
-    date: maintDate,
-    hourMeter: maintHours,
-    plan: plan,
-    reportNumber: reportNumber,
-    notes: notes
-  };
-
-  const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
-  eq.nextMaintenance = {
-    milestoneHours: seq.nextMilestoneHours,
-    plan: seq.nextPlan
-  };
-  eq.updatedAt = new Date().toISOString();
-
-  writeJson(EQUIPMENTS_FILE, equipments);
-  saveEquipmentToGoogleSheets(eq).catch(() => null);
-
-  const metrics = calculateEquipmentHorometerMetrics(eq);
-  res.json({
-    message: 'Mantenimiento registrado y ciclo avanzado con éxito.',
-    equipment: eq,
-    metrics
-  });
-});
-
-// 4. Update Equipment Maintenance Baseline / Configuration
-app.put('/api/equipments/:id/maintenance-config', (req, res) => {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const idx = equipments.findIndex(e => e.id === req.params.id);
-
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
-  }
-
-  const eq = equipments[idx];
-  const maintenanceCycle = req.body.maintenanceCycle || req.body.cycleType;
-  const lastMaintenanceDate = req.body.lastMaintenanceDate || req.body.lastMaintDate;
-  const lastMaintenanceHours = req.body.lastMaintenanceHours !== undefined ? req.body.lastMaintenanceHours : req.body.lastMaintHours;
-  const lastMaintenancePlan = req.body.lastMaintenancePlan || req.body.lastPlan;
-  const nextMilestoneHours = req.body.nextMilestoneHours;
-  const nextPlan = req.body.nextPlan;
-  const monthlyAverageHours = req.body.monthlyAverageHours;
-  const alertThresholdHours = req.body.alertThresholdHours;
-
-  if (maintenanceCycle) {
-    eq.maintenanceCycle = maintenanceCycle;
-    eq.cycleType = maintenanceCycle;
-  }
-
-  if (lastMaintenanceDate || lastMaintenanceHours !== undefined || lastMaintenancePlan) {
-    eq.lastMaintenance = {
-      date: lastMaintenanceDate || eq.lastMaintenance?.date || null,
-      hourMeter: lastMaintenanceHours !== undefined && lastMaintenanceHours !== null && lastMaintenanceHours !== '' ? Number(lastMaintenanceHours) : eq.lastMaintenance?.hourMeter,
-      plan: lastMaintenancePlan || eq.lastMaintenance?.plan || 'Plan A — 2000 horas',
-      reportNumber: eq.lastMaintenance?.reportNumber || '',
-      notes: eq.lastMaintenance?.notes || 'Configuración inicial de línea base'
-    };
-  }
-
-  const cycle = eq.maintenanceCycle || 'ciclo_2000';
-  let calcNextMilestone = nextMilestoneHours !== undefined && nextMilestoneHours !== null && nextMilestoneHours !== ''
-    ? Number(nextMilestoneHours)
-    : (eq.lastMaintenance?.hourMeter !== undefined ? computeNextMilestoneHours(eq.lastMaintenance.hourMeter, cycle) : null);
-
-  let calcNextPlan = nextPlan || (calcNextMilestone !== null ? getPlanForMilestone(calcNextMilestone, cycle) : null);
-
-  eq.nextMaintenance = {
-    milestoneHours: calcNextMilestone,
-    plan: calcNextPlan
-  };
-
-  if (monthlyAverageHours !== undefined) {
-    eq.monthlyAverageHours = monthlyAverageHours !== null && monthlyAverageHours !== '' ? Number(monthlyAverageHours) : null;
-  }
-
-  if (alertThresholdHours !== undefined) {
-    eq.alertThresholdHours = alertThresholdHours !== null && alertThresholdHours !== '' ? Number(alertThresholdHours) : 200;
-  }
-
-  if (req.body.currentHours !== undefined || req.body.hourMeter !== undefined) {
-    const rawH = req.body.currentHours !== undefined ? req.body.currentHours : req.body.hourMeter;
-    if (rawH !== null && rawH !== '') {
-      eq.hourMeter = String(rawH);
-      eq.hours = Number(rawH);
-    }
-  }
-
-  eq.updatedAt = new Date().toISOString();
-  writeJson(EQUIPMENTS_FILE, equipments);
-  saveEquipmentToGoogleSheets(eq).catch(() => null);
-
-  const metrics = calculateEquipmentHorometerMetrics(eq);
-  res.json({
-    message: 'Configuración de mantenimiento actualizada con éxito.',
-    equipment: eq,
-    metrics
-  });
-});
-
-// 5. Get Equipment Horometer & Maintenance History
-app.get('/api/equipments/:id/horometer-history', (req, res) => {
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const eq = equipments.find(e => e.id === req.params.id || e.apiCode === req.params.id);
-
-  if (!eq) {
-    return res.status(404).json({ error: 'Equipo no encontrado.' });
-  }
-
-  const history = Array.isArray(eq.readingsHistory) ? eq.readingsHistory : [];
-  res.json(history);
-});
-
-// --- DEMO DATA MANAGEMENT ENDPOINTS ---
-app.get('/api/demo/status', (req, res) => {
-  const clients = readJson(CLIENTS_FILE, []);
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-
-  const demoClients = clients.filter(c => !!c.isDemo);
-  const demoEquipments = equipments.filter(e => !!e.isDemo);
-
-  res.json({
-    isLoaded: demoClients.length > 0 || demoEquipments.length > 0,
-    demoClientsCount: demoClients.length,
-    demoEquipmentsCount: demoEquipments.length,
-    totalClientsCount: clients.length,
-    totalEquipmentsCount: equipments.length
-  });
-});
-
-app.post('/api/demo/load', (req, res) => {
-  initCatalogData();
-  const clients = readJson(CLIENTS_FILE, []);
-  const equipments = readJson(EQUIPMENTS_FILE, []);
-  const demoClients = clients.filter(c => !!c.isDemo);
-  const demoEquipments = equipments.filter(e => !!e.isDemo);
-
-  res.json({
-    message: 'Datos de demostración cargados exitosamente (5 clientes y 15 equipos).',
-    demoClientsCount: demoClients.length,
-    demoEquipmentsCount: demoEquipments.length
-  });
-});
-
-app.post('/api/demo/clear', (req, res) => {
-  let clients = readJson(CLIENTS_FILE, []);
-  let equipments = readJson(EQUIPMENTS_FILE, []);
-
-  // Remove ONLY demo data; preserve all real records
-  const initialClientCount = clients.length;
-  const initialEquipmentCount = equipments.length;
-
-  clients = clients.filter(c => !c.isDemo);
-  equipments = equipments.filter(e => !e.isDemo);
-
-  writeJson(CLIENTS_FILE, clients);
-  writeJson(EQUIPMENTS_FILE, equipments);
-
-  res.json({
-    message: 'Datos de demostración eliminados. Se conservaron todos los registros reales del sistema.',
-    clientsRemoved: initialClientCount - clients.length,
-    equipmentsRemoved: initialEquipmentCount - equipments.length,
-    remainingClients: clients.length,
-    remainingEquipments: equipments.length
-  });
-});
-
-app.post('/api/demo/reset-horometers', (req, res) => {
-  let clients = readJson(CLIENTS_FILE, []);
-  let equipments = readJson(EQUIPMENTS_FILE, []);
-
-  // Filter out existing demo equipments and replace with fresh DEMO_EQUIPMENTS
-  const realEquipments = equipments.filter(e => !e.isDemo);
-  const updatedEquipments = [...realEquipments, ...DEMO_EQUIPMENTS.map(d => ({ ...d }))];
-
-  // Ensure demo clients exist
-  DEMO_CLIENTS.forEach(demoClient => {
-    if (!clients.some(c => c.id === demoClient.id || c.name.toLowerCase() === demoClient.name.toLowerCase())) {
-      clients.push({ ...demoClient });
-    }
-  });
-
-  writeJson(CLIENTS_FILE, clients);
-  writeJson(EQUIPMENTS_FILE, updatedEquipments);
-
-  res.json({
-    message: 'Datos de demostración del módulo de Horómetros reiniciados a sus estados óptimos de simulación.',
-    demoEquipmentsCount: DEMO_EQUIPMENTS.length,
-    realEquipmentsCount: realEquipments.length
-  });
-});
-
-// --- Maintenance Plans Endpoints ---
-app.get('/api/plans', (req, res) => {
-  const plans = readJson(PLANS_FILE, { allTasks: [], defaultPlans: {}, customModelPlans: {} });
-  res.json(plans);
-});
-
-app.put('/api/plans', (req, res) => {
-  writeJson(PLANS_FILE, req.body);
-  res.json({ message: 'Planes actualizados exitosamente' });
-});
-
-// --- Google Sheets Webhook Integration Helper ---
-async function syncReportToGoogleSheets(report) {
-  try {
-    if (!report) return null;
-    // Strict isolation: Never sync demo reports to Google Sheets
-    if (report.isDemo || (report.client && report.client.toLowerCase().includes('demo'))) {
-      console.log(`[Google Sheets Sync] Omitiendo sincronización: reporte de demostración (${report.reportNumber || 'DEMO'}).`);
-      return null;
-    }
-
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: '', autoSyncSheets: true });
-    if (!settings.googleSheetsWebhookUrl || !settings.googleSheetsWebhookUrl.trim()) return null;
-    if (settings.autoSyncSheets === false) return null;
-
-    // Call Apps Script Webhook
-    const res = await fetch(settings.googleSheetsWebhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'sync_report',
-        report: report
-      })
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar reporte:', err.message);
-    return null;
-  }
-}
-
-async function deleteReportFromGoogleSheets(report) {
-  try {
-    if (!report) return null;
-    if (report.isDemo || (report.client && report.client.toLowerCase().includes('demo'))) {
-      return null;
-    }
-
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl || settings.autoSyncSheets === false) return null;
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'delete_report',
-        reportId: report.id,
-        reportNumber: report.reportNumber
-      })
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: no se pudo sincronizar eliminación en Google Sheets:', err.message);
-    return null;
-  }
-}
-
-async function saveEquipmentToGoogleSheets(equipment) {
-  try {
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl || settings.autoSyncSheets === false || !equipment) return null;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'save_equipment',
-        equipment: equipment
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return await res.json().catch(() => null);
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: save_equipment finalizado:', err.message);
-    return null;
-  }
-}
-
-async function deleteEquipmentFromGoogleSheets(equipment) {
-  try {
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl || settings.autoSyncSheets === false || !equipment) return null;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'delete_equipment',
-        equipmentId: equipment.id,
-        apiCode: equipment.apiCode || equipment.serialNumber,
-        model: equipment.model
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return await res.json().catch(() => null);
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: delete_equipment finalizado:', err.message);
-    return null;
-  }
-}
-
-async function deleteClientFromGoogleSheets(client) {
-  try {
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl || settings.autoSyncSheets === false || !client) return null;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'delete_client',
-        clientId: client.id,
-        clientName: client.name
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return await res.json().catch(() => null);
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: delete_client finalizado:', err.message);
-    return null;
-  }
-}
-
-async function syncClientsToGoogleSheets() {
-  try {
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl || settings.autoSyncSheets === false) return null;
-
-    const clients = readJson(CLIENTS_FILE, []).filter(c => !c.isDemo && !(c.name && c.name.toLowerCase().includes('demo')));
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'sync_clients',
-        clients: clients
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return await res.json().catch(() => null);
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: sincronización de clientes finalizada:', err.message);
-    return null;
-  }
-}
-
-async function syncEquipmentsToGoogleSheets() {
-  try {
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl || settings.autoSyncSheets === false) return null;
-
-    const equipments = readJson(EQUIPMENTS_FILE, []).filter(e => !e.isDemo);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'sync_equipments',
-        equipments: equipments
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return await res.json().catch(() => null);
-  } catch (err) {
-    console.warn('[Google Sheets Sync] Aviso: sincronización de equipos finalizada:', err.message);
-    return null;
-  }
-}
-
-// Helper para jalar clientes y equipos actualizados desde Google Sheets (Base de Datos Cloud)
-async function pullDataFromGoogleSheets() {
-  try {
-    const defaultWebhook = 'https://script.google.com/macros/s/AKfycbynhuCRqkjdVzK0sEeQCdbeHMFwcMj6PLqDW6Cme2wOcNRo4ZuaoTEe7a_54GZG2L6U/exec';
-    const settings = readJson(SETTINGS_FILE, { googleSheetsWebhookUrl: defaultWebhook, autoSyncSheets: true });
-    const webhookUrl = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || settings.googleSheetsWebhookUrl || defaultWebhook).trim();
-    if (!webhookUrl) return null;
-
-    console.log('[Google Sheets DB] Consultando clientes y equipos desde Google Sheets...');
-    const res = await fetch(`${webhookUrl}?action=get_all_data`, { redirect: 'follow' });
-    if (!res.ok) return null;
-
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      return null;
-    }
-
-    if (data && data.status === 'success') {
-      let clientsUpdated = false;
-      let equipmentsUpdated = false;
-
-      if (Array.isArray(data.clients) && data.clients.length > 0) {
-        const currentClients = readJson(CLIENTS_FILE, []);
-        const clientMap = new Map();
-        currentClients.forEach(c => clientMap.set(c.id, c));
-        data.clients.forEach(c => {
-          if (c.id && c.name) {
-            clientMap.set(c.id, { ...(clientMap.get(c.id) || {}), ...c });
-          }
-        });
-        const mergedClients = Array.from(clientMap.values());
-        writeJson(CLIENTS_FILE, mergedClients);
-        clientsUpdated = true;
-      }
-
-      if (Array.isArray(data.equipments) && data.equipments.length > 0) {
-        const currentEquipments = readJson(EQUIPMENTS_FILE, []);
-        const eqMap = new Map();
-        currentEquipments.forEach(e => eqMap.set(e.id || e.apiCode, e));
-        data.equipments.forEach(e => {
-          const key = e.id || e.apiCode;
-          if (key && (e.model || e.client)) {
-            eqMap.set(key, { ...(eqMap.get(key) || {}), ...e });
-          }
-        });
-        const mergedEquipments = Array.from(eqMap.values());
-        writeJson(EQUIPMENTS_FILE, mergedEquipments);
-        equipmentsUpdated = true;
-      }
-
-      console.log(`[Google Sheets DB] Sincronización exitosa desde Sheets. Clientes: ${data.clients?.length || 0}, Equipos: ${data.equipments?.length || 0}`);
-      return {
-        clientsCount: data.clients?.length || 0,
-        equipmentsCount: data.equipments?.length || 0,
-        clientsUpdated,
-        equipmentsUpdated
+    const seq = determineNextMaintenancePlan(updatedData, updatedData.lastMaintenance);
+    if (!req.body.nextMaintenance || !req.body.nextMaintenance.milestoneHours) {
+      updatedData.nextMaintenance = {
+        milestoneHours: seq.nextMilestoneHours || existing.nextMaintenance?.milestoneHours,
+        plan: seq.nextPlan || existing.nextMaintenance?.plan
       };
     }
-  } catch (err) {
-    console.warn('[Google Sheets DB] Consulta a Google Sheets omitida o no disponible:', err.message);
-  }
-  return null;
-}
 
-// Endpoint para jalar datos desde Google Sheets a petición o recuperación
-app.post('/api/settings/pull-sheets', async (req, res) => {
-  try {
-    const result = await pullDataFromGoogleSheets();
-    if (result) {
-      res.json({
-        success: true,
-        message: `Base de datos sincronizada desde Google Sheets (${result.clientsCount} clientes, ${result.equipmentsCount} equipos).`,
-        ...result
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        message: 'No se pudo obtener datos desde Google Sheets. Verifique la conexión o intente nuevamente.'
-      });
-    }
+    const saved = await db.updateEquipment(req.params.id, updatedData);
+    res.json({ message: 'Equipo actualizado exitosamente.', equipment: saved });
   } catch (err) {
-    res.status(500).json({ error: 'Error al sincronizar desde Google Sheets: ' + err.message });
+    res.status(err.status || 500).json({ error: 'Error al actualizar equipo: ' + err.message });
   }
 });
 
-// Settings endpoints
-app.get('/api/settings', (req, res) => {
-  const settings = readJson(SETTINGS_FILE, {
-    googleSheetsWebhookUrl: '',
-    autoSyncSheets: true,
-    lastSyncTime: null
-  });
-  res.json(settings);
-});
-
-app.put('/api/settings', (req, res) => {
-  const current = readJson(SETTINGS_FILE, {
-    googleSheetsWebhookUrl: '',
-    autoSyncSheets: true,
-    lastSyncTime: null
-  });
-  const updated = { ...current, ...req.body };
-  writeJson(SETTINGS_FILE, updated);
-  res.json({ message: 'Configuración guardada exitosamente.', settings: updated });
-});
-
-// Test connection to Google Sheets Webhook
-app.post('/api/google-sheets/test', async (req, res) => {
+app.patch('/api/equipments/:id/status', authorizeWrite, async (req, res) => {
   try {
-    const url = req.body.url || (readJson(SETTINGS_FILE, {}).googleSheetsWebhookUrl);
-    if (!url || !url.trim()) {
-      return res.status(400).json({ error: 'Debe ingresar una URL de Webhook de Google Apps Script válida.' });
+    const existing = await db.getEquipmentById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
     }
 
-    const response = await fetch(url.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'test_connection' })
+    const newStatus = req.body.status || (existing.status === 'Activo' ? 'Inactivo' : 'Activo');
+    const updated = await db.updateEquipment(req.params.id, {
+      ...existing,
+      status: newStatus,
+      active: newStatus === 'Activo'
     });
 
-    const data = await response.json();
-    res.json(data);
+    res.json({ message: `Estado actualizado a "${newStatus}".`, equipment: updated });
   } catch (err) {
-    res.status(500).json({ error: 'Error al conectar con Google Sheets: ' + err.message });
+    res.status(err.status || 500).json({ error: 'Error al cambiar estado: ' + err.message });
   }
 });
 
-// Sync all existing reports to Google Sheets
-app.post('/api/google-sheets/sync-all', async (req, res) => {
+app.delete('/api/equipments/:id', authorizeWrite, async (req, res) => {
   try {
-    const settings = readJson(SETTINGS_FILE, {});
-    const url = settings.googleSheetsWebhookUrl;
-    if (!url || !url.trim()) {
-      return res.status(400).json({ error: 'Configure primero la URL del Webhook de Google Sheets.' });
+    const existing = await db.getEquipmentById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Equipo no encontrado en Supabase.' });
     }
 
-    const reports = readJson(REPORTS_FILE, []).filter(r => !r.isDemo && !(r.client && r.client.toLowerCase().includes('demo')));
-    const equipments = readJson(EQUIPMENTS_FILE, []).filter(e => !e.isDemo);
-    const clients = readJson(CLIENTS_FILE, []).filter(c => !c.isDemo);
+    await db.deleteEquipment(req.params.id);
+    res.json({ success: true, message: 'Equipo eliminado exitosamente.' });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al eliminar equipo: ' + err.message });
+  }
+});
 
-    // 1. Sync Catalog
-    await fetch(url.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sync_equipments', equipments })
-    }).catch(e => console.warn(e));
+// ----------------------------------------------------------------------------
+// API ROUTES — HORÓMETROS Y REGISTROS DE LECTURAS
+// ----------------------------------------------------------------------------
 
-    await fetch(url.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sync_clients', clients })
-    }).catch(e => console.warn(e));
-
-    // 2. Sync Reports
-    let syncedCount = 0;
-    for (const rep of reports) {
-      await fetch(url.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'sync_report', report: rep })
-      }).catch(e => console.warn(e));
-      syncedCount++;
+app.post('/api/equipments/:id/readings', authorizeWrite, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado en Supabase.' });
     }
 
-    settings.lastSyncTime = new Date().toISOString();
-    writeJson(SETTINGS_FILE, settings);
+    const newHours = Number(req.body.hourMeter !== undefined ? req.body.hourMeter : req.body.hours);
+    const readingDate = req.body.date || new Date().toISOString().split('T')[0];
+    const notes = (req.body.notes || '').trim();
+    const user = (req.body.user || req.body.registeredBy || 'Administrador').trim();
+
+    if (isNaN(newHours) || newHours < 0) {
+      return res.status(400).json({ error: 'La lectura del horómetro debe ser un número positivo mayor o igual a 0.' });
+    }
+
+    const updated = await db.addEquipmentReading(req.params.id, {
+      date: readingDate,
+      hourMeter: newHours,
+      hours: newHours,
+      type: 'reading',
+      notes,
+      user
+    });
+
+    const metrics = calculateEquipmentHorometerMetrics(updated);
+    res.json({
+      message: 'Lectura de horómetro registrada exitosamente.',
+      equipment: updated,
+      metrics
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al registrar lectura: ' + err.message });
+  }
+});
+
+app.post('/api/equipments/:id/maintenance', authorizeWrite, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+
+    const maintDate = req.body.date || new Date().toISOString().split('T')[0];
+    const rawHours = req.body.hourMeter !== undefined ? req.body.hourMeter : req.body.hours;
+    const maintHours = Number(rawHours !== undefined && rawHours !== '' ? rawHours : (eq.hourMeter || eq.hours || 0));
+    const plan = req.body.plan || 'Plan A — 2000 horas';
+    const reportNumber = (req.body.reportNumber || '').trim();
+    const notes = (req.body.notes || '').trim();
+    const user = (req.body.user || req.body.technician || 'Técnico INDUSTRAC').trim();
+
+    if (isNaN(maintHours) || maintHours < 0) {
+      return res.status(400).json({ error: 'La lectura del horómetro en mantenimiento debe ser un número válido.' });
+    }
+
+    const updated = await db.addEquipmentReading(req.params.id, {
+      date: maintDate,
+      hourMeter: maintHours,
+      hours: maintHours,
+      type: 'mantenimiento',
+      plan,
+      reportNumber,
+      notes,
+      user
+    });
+
+    // Actualizar lastMaintenance y recalcular próximo hito
+    updated.lastMaintenance = {
+      date: maintDate,
+      hourMeter: maintHours,
+      plan: plan,
+      reportNumber: reportNumber,
+      notes: notes
+    };
+
+    const seq = determineNextMaintenancePlan(updated, updated.lastMaintenance);
+    updated.nextMaintenance = {
+      milestoneHours: seq.nextMilestoneHours,
+      plan: seq.nextPlan
+    };
+
+    const finalSaved = await db.updateEquipment(req.params.id, updated);
+    const metrics = calculateEquipmentHorometerMetrics(finalSaved);
 
     res.json({
-      message: `¡Sincronización completa! Se enviaron ${syncedCount} reportes, ${equipments.length} equipos y ${clients.length} clientes a Google Sheets.`,
-      syncedReports: syncedCount,
-      syncedEquipments: equipments.length,
-      syncedClients: clients.length
+      message: 'Mantenimiento registrado y ciclo avanzado con éxito.',
+      equipment: finalSaved,
+      metrics
     });
   } catch (err) {
-    res.status(500).json({ error: 'Error durante la sincronización total: ' + err.message });
+    res.status(err.status || 500).json({ error: 'Error al registrar mantenimiento: ' + err.message });
   }
 });
 
-// Serve frontend static files
+app.put('/api/equipments/:id/maintenance-config', authorizeWrite, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+
+    const maintenanceCycle = req.body.maintenanceCycle || req.body.cycleType;
+    if (maintenanceCycle) {
+      eq.maintenanceCycle = maintenanceCycle;
+      eq.cycleType = maintenanceCycle;
+    }
+
+    const lastMaintenanceDate = req.body.lastMaintenanceDate || req.body.lastMaintDate;
+    const lastMaintenanceHours = req.body.lastMaintenanceHours !== undefined ? req.body.lastMaintenanceHours : req.body.lastMaintHours;
+    const lastMaintenancePlan = req.body.lastMaintenancePlan || req.body.lastPlan;
+
+    if (lastMaintenanceDate || lastMaintenanceHours !== undefined || lastMaintenancePlan) {
+      eq.lastMaintenance = {
+        date: lastMaintenanceDate || eq.lastMaintenance?.date || null,
+        hourMeter: lastMaintenanceHours !== undefined && lastMaintenanceHours !== null && lastMaintenanceHours !== '' ? Number(lastMaintenanceHours) : eq.lastMaintenance?.hourMeter,
+        plan: lastMaintenancePlan || eq.lastMaintenance?.plan || 'Plan A — 2000 horas',
+        reportNumber: eq.lastMaintenance?.reportNumber || '',
+        notes: eq.lastMaintenance?.notes || 'Configuración inicial de línea base'
+      };
+    }
+
+    const cycle = eq.maintenanceCycle || 'ciclo_2000';
+    let calcNextMilestone = req.body.nextMilestoneHours !== undefined && req.body.nextMilestoneHours !== null && req.body.nextMilestoneHours !== ''
+      ? Number(req.body.nextMilestoneHours)
+      : (eq.lastMaintenance?.hourMeter !== undefined ? computeNextMilestoneHours(eq.lastMaintenance.hourMeter, cycle) : null);
+
+    let calcNextPlan = req.body.nextPlan || (calcNextMilestone !== null ? getPlanForMilestone(calcNextMilestone, cycle) : null);
+
+    eq.nextMaintenance = {
+      milestoneHours: calcNextMilestone,
+      plan: calcNextPlan
+    };
+
+    if (req.body.monthlyAverageHours !== undefined) {
+      eq.monthlyAverageHours = req.body.monthlyAverageHours !== null && req.body.monthlyAverageHours !== '' ? Number(req.body.monthlyAverageHours) : null;
+    }
+    if (req.body.alertThresholdHours !== undefined) {
+      eq.alertThresholdHours = req.body.alertThresholdHours !== null && req.body.alertThresholdHours !== '' ? Number(req.body.alertThresholdHours) : 200;
+    }
+    if (req.body.currentHours !== undefined || req.body.hourMeter !== undefined) {
+      const rawH = req.body.currentHours !== undefined ? req.body.currentHours : req.body.hourMeter;
+      if (rawH !== null && rawH !== '') {
+        eq.hourMeter = String(rawH);
+        eq.hours = Number(rawH);
+      }
+    }
+
+    const saved = await db.updateEquipment(req.params.id, eq);
+    const metrics = calculateEquipmentHorometerMetrics(saved);
+
+    res.json({
+      message: 'Configuración de mantenimiento actualizada con éxito.',
+      equipment: saved,
+      metrics
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al actualizar configuración: ' + err.message });
+  }
+});
+
+app.get('/api/equipments/:id/horometer-history', requireAuth, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+    res.json(eq.readingsHistory || []);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al obtener historial: ' + err.message });
+  }
+});
+
+app.delete('/api/equipments/:id/horometer', authorizeWrite, async (req, res) => {
+  try {
+    const eq = await db.getEquipmentById(req.params.id);
+    if (!eq) {
+      return res.status(404).json({ error: 'Equipo no encontrado.' });
+    }
+
+    eq.readingsHistory = [];
+    eq.lastMaintenance = null;
+    eq.nextMaintenance = null;
+    eq.lastReadingDate = null;
+    eq.hourMeter = '0';
+    eq.hours = 0;
+
+    const saved = await db.updateEquipment(req.params.id, eq);
+    res.json({ success: true, message: 'Horómetro restablecido exitosamente.', equipment: saved });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al restablecer horómetro: ' + err.message });
+  }
+});
+
+app.get('/api/horometers', requireAuth, async (req, res) => {
+  try {
+    const equipments = await db.getEquipments();
+    const enriched = equipments.map(eq => {
+      const metrics = calculateEquipmentHorometerMetrics(eq);
+      return {
+        ...eq,
+        metrics
+      };
+    });
+
+    let operational = 0;
+    let overdueHours = 0;
+    let overdueDate = 0;
+    let overdueBoth = 0;
+    let nearHours = 0;
+    let nearDate = 0;
+    let nearBoth = 0;
+    let pendingConfig = 0;
+
+    enriched.forEach(e => {
+      switch (e.metrics.statusCode) {
+        case 'up_to_date': operational++; break;
+        case 'overdue_both': overdueBoth++; break;
+        case 'overdue_hours': overdueHours++; break;
+        case 'overdue_date': overdueDate++; break;
+        case 'near_both': nearBoth++; break;
+        case 'near_hours': nearHours++; break;
+        case 'near_date': nearDate++; break;
+        case 'pending_config': pendingConfig++; break;
+      }
+    });
+
+    const overdueTotal = overdueBoth + overdueHours + overdueDate;
+    const nearTotal = nearBoth + nearHours + nearDate;
+
+    res.json({
+      totalEquipments: equipments.length,
+      operationalCount: operational,
+      alertCount: nearTotal,
+      expiredCount: overdueTotal,
+      pendingDataCount: pendingConfig,
+      summary: {
+        upToDate: operational,
+        nearHours,
+        nearDate,
+        nearBoth,
+        overdueHours,
+        overdueDate,
+        overdueBoth,
+        pendingConfig
+      },
+      equipments: enriched
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al cargar horómetros: ' + err.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — PLANES DE MANTENIMIENTO
+// ----------------------------------------------------------------------------
+
+app.get('/api/plans', async (req, res) => {
+  try {
+    const plans = await db.getMaintenancePlans();
+    res.json(plans);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al consultar planes: ' + err.message });
+  }
+});
+
+app.put('/api/plans', authorizeWrite, async (req, res) => {
+  try {
+    const updated = await db.updateMaintenancePlans(req.body);
+    res.json({ message: 'Planes de mantenimiento actualizados exitosamente en Supabase.', plans: updated });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Error al guardar planes: ' + err.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// API ROUTES — CONFIGURACIÓN Y DESCONEXIÓN DE GOOGLE SHEETS
+// ----------------------------------------------------------------------------
+
+app.get('/api/settings', requireAuth, (req, res) => {
+  res.json({
+    supabaseDatabase: 'Conectado a PostgreSQL',
+    googleDriveActive: true,
+    googleSheetsStatus: 'Desactivado (Sustituido por Supabase PostgreSQL)'
+  });
+});
+
+app.put('/api/settings', authorizeWrite, (req, res) => {
+  res.json({
+    message: 'Configuración actualizada.',
+    supabaseDatabase: 'Conectado a PostgreSQL'
+  });
+});
+
+app.post(['/api/settings/pull-sheets', '/api/google-sheets/test', '/api/google-sheets/sync-all'], (req, res) => {
+  res.json({
+    success: true,
+    message: 'La integración con Google Sheets ha sido retirada de forma permanente. Toda la persistencia es administrada de manera segura por Supabase PostgreSQL.'
+  });
+});
+
+// ----------------------------------------------------------------------------
+// FRONTEND STATIC FILES & SPA FALLBACK
+// ----------------------------------------------------------------------------
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Fallback to index.html for SPA (Express 5 compatible)
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start Server (only when not running as a Vercel serverless function)
+// ----------------------------------------------------------------------------
+// INICIO DEL SERVIDOR
+// ----------------------------------------------------------------------------
+
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`[INDUSTRAC] Servidor iniciado exitosamente en http://localhost:${PORT}`);
+    console.log(`[INDUSTRAC] Motor de persistencia activo: Supabase PostgreSQL`);
   });
 }
 

@@ -73,6 +73,7 @@ class IndustracApp {
     this.horometerMode = 'real';
     this.horometersPriorityList = [];
     this.horometersMonthlyProjection = null;
+    this.currentUser = null;
   }
 
   async init() {
@@ -89,10 +90,21 @@ class IndustracApp {
       this.reportData.date = today;
     }
 
-    // Carga inmediata desde almacenamiento local persistente (Anti-borrado en recarga de página)
+    // Carga de catálogo en memoria para agilidad de UI
     this.restoreLocalCatalogCache();
 
-    // Fetch initial data deterministically
+    // Comprobar autenticación con el backend
+    const isAuth = await this.checkAuthStatus();
+    if (isAuth) {
+      await this.loadAllSystemData();
+    } else {
+      this.showAuthModal();
+      // Cargar planes que son públicos para la interfaz
+      await this.loadPlans();
+    }
+  }
+
+  async loadAllSystemData() {
     await this.loadPlans();
     await this.loadClients();
     await this.loadEquipments();
@@ -100,9 +112,122 @@ class IndustracApp {
       this.loadReports(),
       this.loadHorometersData()
     ]);
-
-    // Restore draft or start fresh
     this.restoreOrCreateDraft();
+  }
+
+  // --- AUTENTICACIÓN Y SEGURIDAD ---
+  async checkAuthStatus() {
+    try {
+      const res = await fetch('/api/auth/me');
+      const data = await res.json();
+      if (data && data.authenticated && data.user) {
+        this.currentUser = data.user;
+        this.updateUserSessionUI(data.user);
+        this.hideAuthModal();
+        return true;
+      }
+    } catch (e) {
+      console.warn('Error comprobando sesión de usuario:', e);
+    }
+    this.currentUser = null;
+    this.updateUserSessionUI(null);
+    return false;
+  }
+
+  updateUserSessionUI(user) {
+    const badge = document.getElementById('user-session-badge');
+    const nameEl = document.getElementById('user-session-name');
+    if (user && badge && nameEl) {
+      nameEl.textContent = user.name || (user.email ? user.email.split('@')[0] : 'Operador');
+      badge.style.display = 'inline-flex';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+  }
+
+  showAuthModal() {
+    const modal = document.getElementById('industrac-auth-modal');
+    if (modal) {
+      modal.classList.add('active');
+      const errBox = document.getElementById('login-error-msg');
+      if (errBox) errBox.style.display = 'none';
+      setTimeout(() => {
+        document.getElementById('login-email')?.focus();
+      }, 200);
+    }
+  }
+
+  hideAuthModal() {
+    const modal = document.getElementById('industrac-auth-modal');
+    if (modal) {
+      modal.classList.remove('active');
+    }
+  }
+
+  async handleLoginSubmit() {
+    const emailInput = document.getElementById('login-email');
+    const passInput = document.getElementById('login-password');
+    const submitBtn = document.getElementById('btn-login-submit');
+    const errBox = document.getElementById('login-error-msg');
+
+    const email = emailInput?.value?.trim() || '';
+    const password = passInput?.value || '';
+
+    if (!password) {
+      if (errBox) {
+        errBox.textContent = 'Por favor ingrese su contraseña de acceso.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verificando credenciales...';
+    }
+    if (errBox) errBox.style.display = 'none';
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        this.currentUser = data.user;
+        this.updateUserSessionUI(data.user);
+        this.hideAuthModal();
+        this.showToast(`Bienvenido, ${data.user.name || data.user.email}`, 'success');
+        await this.loadAllSystemData();
+      } else {
+        if (errBox) {
+          errBox.textContent = data.error || 'Credenciales inválidas o no autorizadas.';
+          errBox.style.display = 'block';
+        }
+      }
+    } catch (err) {
+      if (errBox) {
+        errBox.textContent = 'Error al comunicarse con el servidor: ' + err.message;
+        errBox.style.display = 'block';
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🔒 Iniciar Sesión';
+      }
+    }
+  }
+
+  async logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) { }
+    this.currentUser = null;
+    this.updateUserSessionUI(null);
+    this.showAuthModal();
+    this.showToast('Sesión cerrada correctamente.', 'info');
   }
 
   getEmptyReport() {
@@ -708,39 +833,14 @@ class IndustracApp {
   async loadClients() {
     try {
       const res = await fetch('/api/clients');
+      if (res.status === 401) {
+        this.showAuthModal();
+        return;
+      }
       if (!res.ok) throw new Error('Error al consultar /api/clients');
       const serverClients = await res.json();
 
-      // Diagnóstico Vercel: Filtrar clientes eliminados localmente para evitar resurrección por builds estáticos
-      const deletedClients = JSON.parse(localStorage.getItem('industrac_deleted_clients') || '[]');
-      const localClients = JSON.parse(localStorage.getItem('industrac_catalog_clients') || '[]');
-
-      const validServerClients = (Array.isArray(serverClients) ? serverClients : []).filter(c => {
-        if (!c || !c.id) return false;
-        if (deletedClients.includes(c.id)) return false;
-        if (c.name && deletedClients.includes(c.name.trim().toLowerCase())) return false;
-        return true;
-      });
-
-      // Fusionar inteligentemente con modificaciones locales recientes (solo para entidades existentes en servidor)
-      const mergedMap = new Map();
-      validServerClients.forEach(sc => mergedMap.set(sc.id, sc));
-
-      if (Array.isArray(localClients)) {
-        localClients.forEach(lc => {
-          if (!lc || !lc.id) return;
-          const existing = mergedMap.get(lc.id);
-          if (existing) {
-            const localTime = lc.updatedAt ? new Date(lc.updatedAt).getTime() : 0;
-            const serverTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-            if (localTime > serverTime) {
-              mergedMap.set(lc.id, { ...existing, ...lc });
-            }
-          }
-        });
-      }
-
-      this.clients = Array.from(mergedMap.values());
+      this.clients = Array.isArray(serverClients) ? serverClients : [];
       this.persistLocalCatalogCache();
       if (Array.isArray(this.equipments) && this.equipments.length > 0) {
         this.recalculateClientCounts();
@@ -761,40 +861,14 @@ class IndustracApp {
   async loadEquipments() {
     try {
       const res = await fetch('/api/equipments');
+      if (res.status === 401) {
+        this.showAuthModal();
+        return;
+      }
       if (!res.ok) throw new Error('Error al consultar /api/equipments');
       const serverEquipments = await res.json();
 
-      // Diagnóstico Vercel: Filtrar equipos eliminados localmente para evitar resurrección por builds estáticos
-      const deletedEqs = JSON.parse(localStorage.getItem('industrac_deleted_equipments') || '[]');
-      const localEquipments = JSON.parse(localStorage.getItem('industrac_catalog_equipments') || '[]');
-
-      const validServerEqs = (Array.isArray(serverEquipments) ? serverEquipments : []).filter(e => {
-        if (!e || !e.id) return false;
-        if (deletedEqs.includes(e.id)) return false;
-        if (e.apiCode && deletedEqs.includes(e.apiCode)) return false;
-        if (e.serialNumber && deletedEqs.includes(e.serialNumber)) return false;
-        return true;
-      });
-
-      // Fusionar inteligentemente con modificaciones locales recientes (solo para entidades existentes en servidor)
-      const mergedMap = new Map();
-      validServerEqs.forEach(se => mergedMap.set(se.id, se));
-
-      if (Array.isArray(localEquipments)) {
-        localEquipments.forEach(le => {
-          if (!le || !le.id) return;
-          const existing = mergedMap.get(le.id);
-          if (existing) {
-            const localTime = le.updatedAt ? new Date(le.updatedAt).getTime() : 0;
-            const serverTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-            if (localTime > serverTime) {
-              mergedMap.set(le.id, { ...existing, ...le });
-            }
-          }
-        });
-      }
-
-      this.equipments = Array.from(mergedMap.values());
+      this.equipments = Array.isArray(serverEquipments) ? serverEquipments : [];
       this.persistLocalCatalogCache();
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
@@ -817,17 +891,14 @@ class IndustracApp {
   async loadReports() {
     try {
       const res = await fetch('/api/reports');
+      if (res.status === 401) {
+        this.showAuthModal();
+        return;
+      }
+      if (!res.ok) throw new Error('Error al consultar /api/reports');
       const serverReports = await res.json();
-      const deletedReports = JSON.parse(localStorage.getItem('industrac_deleted_reports') || '[]');
 
-      const validServerReports = (Array.isArray(serverReports) ? serverReports : []).filter(r => {
-        if (!r || !r.id) return false;
-        if (deletedReports.includes(r.id)) return false;
-        if (r.reportNumber && deletedReports.includes(r.reportNumber)) return false;
-        return true;
-      });
-
-      this.reports = validServerReports;
+      this.reports = Array.isArray(serverReports) ? serverReports : [];
       this.renderHistoryTable();
     } catch (err) {
       console.warn('Error cargando historial de reportes:', err);
@@ -2686,14 +2757,7 @@ class IndustracApp {
 
       if (res.ok && data.success !== false) {
         this.showToast(`Reporte ${rep ? rep.reportNumber : reportId} eliminado exitosamente.`, 'success');
-
-        // Registrar en lista de reportes eliminados para evitar resurrección por caché
-        try {
-          const deletedReports = JSON.parse(localStorage.getItem('industrac_deleted_reports') || '[]');
-          if (reportId && !deletedReports.includes(reportId)) deletedReports.push(reportId);
-          if (rep && rep.reportNumber && !deletedReports.includes(rep.reportNumber)) deletedReports.push(rep.reportNumber);
-          localStorage.setItem('industrac_deleted_reports', JSON.stringify(deletedReports.slice(-100)));
-        } catch (e) { }
+        await this.loadReports();
 
         // Si el reporte eliminado era el borrador actual o tenía el mismo ID/correlativo, limpiar estado
         if (this.reportData && (this.reportData.id === reportId || this.reportData.reportNumber === reportId)) {
@@ -3244,14 +3308,7 @@ class IndustracApp {
       updatedAt: new Date().toISOString()
     };
 
-    // Remover de la lista de eliminados en caso de recreación voluntaria de equipo
-    try {
-      const deletedEqs = JSON.parse(localStorage.getItem('industrac_deleted_equipments') || '[]');
-      const cleaned = deletedEqs.filter(d => d !== eqId && d !== id && d !== apiVal);
-      localStorage.setItem('industrac_deleted_equipments', JSON.stringify(cleaned));
-    } catch (e) { }
-
-    // 1. Guardado inmediato en memoria y localStorage (Inmune a recarga de página)
+    // 1. Guardado en memoria y catálogo
     const existingIdx = this.equipments.findIndex(eq =>
       (id && eq.id === id) ||
       eq.id === eqId ||
@@ -3398,15 +3455,7 @@ class IndustracApp {
     const targetEqId = eq ? eq.id : equipmentId;
     const targetApiCode = eq ? (eq.apiCode || eq.serialNumber) : equipmentId;
 
-    // Registrar en lista de IDs eliminados para evitar resurrección automática por caché
-    try {
-      const deletedIds = JSON.parse(localStorage.getItem('industrac_deleted_equipments') || '[]');
-      if (targetEqId && !deletedIds.includes(targetEqId)) deletedIds.push(targetEqId);
-      if (targetApiCode && !deletedIds.includes(targetApiCode)) deletedIds.push(targetApiCode);
-      localStorage.setItem('industrac_deleted_equipments', JSON.stringify(deletedIds.slice(-100)));
-    } catch (e) { }
-
-    // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
+    // Actualización inmediata en memoria y catálogo
     this.equipments = this.equipments.filter(e =>
       e.id !== targetEqId &&
       e.id !== equipmentId &&
@@ -3499,17 +3548,7 @@ class IndustracApp {
 
     if (!confirmed) return;
 
-    // Registrar en lista de clientes eliminados para evitar resurrección automática por caché
-    try {
-      const deletedClients = JSON.parse(localStorage.getItem('industrac_deleted_clients') || '[]');
-      if (clientId && !deletedClients.includes(clientId)) deletedClients.push(clientId);
-      if (client.name && !deletedClients.includes(client.name.trim().toLowerCase())) {
-        deletedClients.push(client.name.trim().toLowerCase());
-      }
-      localStorage.setItem('industrac_deleted_clients', JSON.stringify(deletedClients.slice(-100)));
-    } catch (e) { }
-
-    // Actualización inmediata en memoria y localStorage (Inmune a recarga de página)
+    // Actualización inmediata en memoria y catálogo
     const clientNameLower = (client.name || '').toLowerCase().trim();
     this.clients = this.clients.filter(c => c.id !== clientId);
     this.equipments = this.equipments.filter(e => e.clientId !== clientId && (e.client || '').toLowerCase().trim() !== clientNameLower);
@@ -3569,14 +3608,7 @@ class IndustracApp {
       updatedAt: new Date().toISOString()
     };
 
-    // Remover de la lista de eliminados en caso de recreación voluntaria de cliente
-    try {
-      const deletedClients = JSON.parse(localStorage.getItem('industrac_deleted_clients') || '[]');
-      const cleaned = deletedClients.filter(d => d !== clientId && d !== name.toLowerCase().trim());
-      localStorage.setItem('industrac_deleted_clients', JSON.stringify(cleaned));
-    } catch (e) { }
-
-    // 1. Guardado inmediato en memoria y localStorage (Inmune a recarga de página)
+    // 1. Guardado en memoria y catálogo
     const existingIdx = this.clients.findIndex(c => c.id === clientId || (c.name && c.name.toLowerCase().trim() === name.toLowerCase().trim()));
     if (existingIdx !== -1) {
       this.clients[existingIdx] = { ...this.clients[existingIdx], ...payload };
