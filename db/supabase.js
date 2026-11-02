@@ -7,13 +7,21 @@
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
+function sanitizeSupabaseUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  let u = rawUrl.trim();
+  u = u.replace(/\/+$/, '');
+  u = u.replace(/\/(rest|auth)\/v1\/?$/i, '');
+  u = u.replace(/\/+$/, '');
+  return u;
+}
+
 let supabase = null;
 
 function getSupabase() {
   if (supabase) return supabase;
 
-  const rawUrl = process.env.SUPABASE_URL;
-  const url = rawUrl ? rawUrl.trim() : null;
+  const url = sanitizeSupabaseUrl(process.env.SUPABASE_URL);
   const key = (
     process.env.SUPABASE_SECRET_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
