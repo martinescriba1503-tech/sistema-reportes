@@ -903,8 +903,35 @@ class IndustracApp {
       if (!res.ok) throw new Error('Error al consultar /api/clients');
       const serverClients = await res.json();
 
-      this.clients = Array.isArray(serverClients) ? serverClients : [];
-      this.persistLocalCatalogCache();
+      if (Array.isArray(serverClients) && serverClients.length > 0) {
+        this.clients = serverClients;
+        this.persistLocalCatalogCache();
+      } else if (Array.isArray(this.clients) && this.clients.length > 0) {
+        for (const localCli of this.clients) {
+          if (!localCli.isDemo) {
+            try {
+              await this.fetchWithAuth('/api/clients', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(localCli)
+              });
+            } catch (syncErr) {
+              console.warn('Error sincronizando cliente local a Supabase:', syncErr);
+            }
+          }
+        }
+        const reloadRes = await this.fetchWithAuth('/api/clients');
+        if (reloadRes.ok) {
+          const synced = await reloadRes.json();
+          if (Array.isArray(synced) && synced.length > 0) {
+            this.clients = synced;
+            this.persistLocalCatalogCache();
+          }
+        }
+      } else {
+        this.clients = [];
+        this.persistLocalCatalogCache();
+      }
       if (Array.isArray(this.equipments) && this.equipments.length > 0) {
         this.recalculateClientCounts();
       }
@@ -931,8 +958,35 @@ class IndustracApp {
       if (!res.ok) throw new Error('Error al consultar /api/equipments');
       const serverEquipments = await res.json();
 
-      this.equipments = Array.isArray(serverEquipments) ? serverEquipments : [];
-      this.persistLocalCatalogCache();
+      if (Array.isArray(serverEquipments) && serverEquipments.length > 0) {
+        this.equipments = serverEquipments;
+        this.persistLocalCatalogCache();
+      } else if (Array.isArray(this.equipments) && this.equipments.length > 0) {
+        for (const localEq of this.equipments) {
+          if (!localEq.isDemo) {
+            try {
+              await this.fetchWithAuth('/api/equipments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(localEq)
+              });
+            } catch (syncErr) {
+              console.warn('Error sincronizando equipo local a Supabase:', syncErr);
+            }
+          }
+        }
+        const reloadRes = await this.fetchWithAuth('/api/equipments');
+        if (reloadRes.ok) {
+          const synced = await reloadRes.json();
+          if (Array.isArray(synced) && synced.length > 0) {
+            this.equipments = synced;
+            this.persistLocalCatalogCache();
+          }
+        }
+      } else {
+        this.equipments = [];
+        this.persistLocalCatalogCache();
+      }
       this.recalculateClientCounts();
       this.renderEquipmentsCatalog();
       this.renderClientsList();
@@ -3693,8 +3747,6 @@ class IndustracApp {
     this.populateModalClientSelect();
 
     this.closeClientModal();
-    this.showToast(`Cliente "${payload.name}" guardado exitosamente.`, 'success');
-
     // Limpiar filtro de búsqueda
     const searchInput = document.getElementById('catalog-client-search');
     if (searchInput) searchInput.value = '';
@@ -3705,11 +3757,11 @@ class IndustracApp {
     const cardEl = document.getElementById(`client-card-${clientId}`);
     if (cardEl) cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    // 2. Persistir en el servidor
+    // 2. Persistir en el servidor Supabase
     try {
       let res;
       if (id) {
-        res = await this.fetchWithAuth(`/api/clients/${id}`, {
+        res = await this.fetchWithAuth(`/api/clients/${encodeURIComponent(id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -3722,16 +3774,23 @@ class IndustracApp {
         });
       }
 
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data) {
-        if (data.id && data.id !== clientId) {
-          const idx = this.clients.findIndex(c => c.id === clientId);
-          if (idx !== -1) this.clients[idx].id = data.id;
-          this.persistLocalCatalogCache();
-        }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Error del servidor (${res.status})`);
       }
+
+      const data = await res.json().catch(() => ({}));
+      const serverId = data.client?.id || data.id;
+      if (serverId && serverId !== clientId) {
+        const idx = this.clients.findIndex(c => c.id === clientId);
+        if (idx !== -1) this.clients[idx].id = serverId;
+        this.persistLocalCatalogCache();
+      }
+      this.showToast(`Cliente "${payload.name}" guardado exitosamente en Supabase.`, 'success');
+      await this.loadClients();
     } catch (err) {
       console.warn('Aviso: guardado local activo para cliente:', err);
+      this.showToast(`Guardado en memoria local: ${err.message}`, 'warning');
     }
   }
 
