@@ -605,9 +605,20 @@ async function getMaintenancePlans() {
     return { allTasks: [], defaultPlans: {}, customModelPlans: {} };
   }
 
+  // Compatibilidad bidireccional para claves con guion largo (—) y guion simple (-)
+  const rawPlans = data.default_plans || {};
+  const normalizedPlans = { ...rawPlans };
+  for (const [k, v] of Object.entries(rawPlans)) {
+    if (k.includes(' — ')) {
+      normalizedPlans[k.replace(' — ', ' - ')] = v;
+    } else if (k.includes(' - ')) {
+      normalizedPlans[k.replace(' - ', ' — ')] = v;
+    }
+  }
+
   return {
     allTasks: Array.isArray(data.all_tasks) ? data.all_tasks : [],
-    defaultPlans: data.default_plans || {},
+    defaultPlans: normalizedPlans,
     customModelPlans: data.custom_model_plans || {}
   };
 }

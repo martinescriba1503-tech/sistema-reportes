@@ -821,6 +821,7 @@ class IndustracApp {
     try {
       const res = await this.fetchWithAuth('/api/plans');
       this.plans = await res.json();
+      this.renderPlansView();
       this.renderMechanicalTasksList();
       this.suggestMechanicalTasks(this.reportData.maintenanceType);
       this.renderAutoLoadedPartsBox(this.reportData.maintenanceType);
@@ -1354,9 +1355,12 @@ class IndustracApp {
   normalizeMaintenanceType(type) {
     if (!type) return 'Plan A — 2000 horas';
     const str = String(type).trim();
-    if (str.includes('4000') || /plan\s*b/i.test(str)) return 'Plan B — 4000 horas';
-    if (str.includes('8000') || /plan\s*c/i.test(str)) return 'Plan C — 8000 horas';
-    if (str.includes('2000') || /plan\s*a/i.test(str)) return 'Plan A — 2000 horas';
+    if (str.includes('12000') || /12\s*000/i.test(str)) return 'Plan C — 12000 horas';
+    if (str.includes('8000') || /8\s*000/i.test(str)) return 'Plan C — 8000 horas';
+    if (str.includes('6000') || /6\s*000/i.test(str)) return 'Plan B — 6000 horas';
+    if (str.includes('4000') || /4\s*000/i.test(str)) return 'Plan B — 4000 horas';
+    if (str.includes('3000') || /3\s*000/i.test(str)) return 'Plan A — 3000 horas';
+    if (str.includes('2000') || /2\s*000/i.test(str)) return 'Plan A — 2000 horas';
     if (/overhaul/i.test(str)) return 'Overhaul';
     if (/correctivo/i.test(str)) return 'Correctivo';
     if (/otro/i.test(str)) return 'Otro';
@@ -1365,9 +1369,13 @@ class IndustracApp {
 
   resolvePlanKey(type) {
     if (!type) return 'Plan A — 2000 horas';
+    if (this.plans?.defaultPlans?.[type]) return type;
+    const withEmDash = type.replace(' - ', ' — ');
+    if (this.plans?.defaultPlans?.[withEmDash]) return withEmDash;
+    const withHyphen = type.replace(' — ', ' - ');
+    if (this.plans?.defaultPlans?.[withHyphen]) return withHyphen;
     const normalized = this.normalizeMaintenanceType(type);
     if (this.plans?.defaultPlans?.[normalized]) return normalized;
-    if (this.plans?.defaultPlans?.[type]) return type;
     return normalized || type;
   }
 
@@ -3745,8 +3753,15 @@ class IndustracApp {
     const group1Keys = ['Plan A — 2000 horas', 'Plan B — 4000 horas', 'Plan C — 8000 horas'];
     const group2Keys = ['Plan A — 3000 horas', 'Plan B — 6000 horas', 'Plan C — 12000 horas'];
 
+    const getPlan = (planKey) => {
+      return defaultPlans[planKey] ||
+        defaultPlans[planKey.replace(' — ', ' - ')] ||
+        defaultPlans[planKey.replace(' - ', ' — ')] ||
+        {};
+    };
+
     const renderCard = (planKey) => {
-      const plan = defaultPlans[planKey] || {};
+      const plan = getPlan(planKey);
       const autoItems = plan.autoLoadItems || [];
       const tasks = plan.suggestedTasks || [];
 
