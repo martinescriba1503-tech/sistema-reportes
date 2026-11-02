@@ -2258,22 +2258,40 @@ class IndustracApp {
     this.updateSyncStatus('Formulario listo');
   }
 
-  async startNewReport() {
-    const hasData = this.reportData && (this.reportData.client || this.reportData.equipmentId || this.reportData.model || this.reportData.observations);
-    if (hasData) {
+  async startNewReport(force = false) {
+    const isAlreadyFinalized = this.reportData && this.reportData.status === 'Finalizado';
+    const hasUnsavedDraft = !isAlreadyFinalized && this.reportData && (this.reportData.client || this.reportData.equipmentId || this.reportData.model || this.reportData.observations);
+
+    if (!force && hasUnsavedDraft) {
       if (!confirm('¿Desea iniciar un nuevo reporte? Se descartará el borrador actual en edición.')) {
         return;
       }
     }
+
     localStorage.removeItem('industrac_active_draft');
     this.reportData = this.getEmptyReport();
-    this.syncStateToForm();
+    this.reportData.date = getLocalDateString();
+    this.reportData.reportNumber = '';
+
+    // Reset native form fields
+    const form = document.getElementById('report-form');
+    if (form) form.reset();
+
+    // Hide selected equipment tag
+    const tag = document.getElementById('equipment-selected-tag');
+    if (tag) tag.style.display = 'none';
+
+    // Clear signatures & photos
     if (this.techSigPad) this.techSigPad.clear();
     if (this.clientSigPad) this.clientSigPad.clear();
     if (this.photoManager) this.photoManager.setPhotos([]);
+
+    this.syncStateToForm();
+    this.suggestMechanicalTasks('Plan A — 2000 horas');
     this.goToStep(1);
     this.switchTab('tab-report');
     this.updateSyncStatus('Formulario listo');
+    this.showToast('¡Nuevo reporte iniciado! Ingrese los datos del servicio.', 'success');
   }
 
   // --- REVIEW SUMMARY (STEP 9) ---
@@ -2663,16 +2681,7 @@ class IndustracApp {
 
   async startNewReportFromSuccessModal() {
     this.closeDownloadSuccessModal();
-    localStorage.removeItem('industrac_active_draft');
-    this.reportData = this.getEmptyReport();
-    this.syncStateToForm();
-    if (this.techSigPad) this.techSigPad.clear();
-    if (this.clientSigPad) this.clientSigPad.clear();
-    if (this.photoManager) this.photoManager.setPhotos([]);
-    this.goToStep(1);
-    this.switchTab('tab-report');
-    await this.restoreOrCreateDraft();
-    this.showToast('¡Nuevo reporte iniciado! Ingrese los datos del servicio.', 'success');
+    await this.startNewReport(true);
   }
 
   async previewReportPdf() {
@@ -4560,32 +4569,38 @@ class IndustracApp {
       `;
 
       // 3. ÚLTIMO SERVICIO
-      const lastServHtml = item.lastServiceDate
-        ? `<span>${this.formatDateSpanish(item.lastServiceDate)}</span>`
+      const lastServ = item.lastServiceDate || item.metrics?.lastMaintDate || item.metrics?.lastReadingDate || item.lastReadingDate || item.lastMaintenance?.date;
+      const lastServHtml = lastServ
+        ? `<span>${this.formatDateSpanish(lastServ)}</span>`
         : '<span style="color: #94A3B8; font-style: italic;">PENDIENTE DE DATOS</span>';
 
       // 4. ÚLTIMO HORÓMETRO
-      const lastHoroHtml = (item.lastHorometer !== null && item.lastHorometer !== undefined && item.lastHorometer !== '')
-        ? `<span class="horometer-val">${Number(item.lastHorometer).toLocaleString()} hrs</span>`
+      const horoVal = item.lastHorometer ?? item.metrics?.lastHoro ?? item.metrics?.currentHours ?? item.hourMeter ?? item.hours;
+      const lastHoroHtml = (horoVal !== null && horoVal !== undefined && horoVal !== '')
+        ? `<span class="horometer-val">${Number(horoVal).toLocaleString()} hrs</span>`
         : '<span style="color: #94A3B8; font-style: italic;">PENDIENTE DE DATOS</span>';
 
       // 5. ÚLTIMO MANTENIMIENTO
-      const lastMaintHtml = item.lastMaintenanceType
-        ? `<span class="badge-last-service">${item.lastMaintenanceType}</span>`
+      const lastMaint = item.lastMaintenanceType || item.metrics?.lastMaintenanceType || item.lastMaintenance?.plan;
+      const lastMaintHtml = lastMaint
+        ? `<span class="badge-last-service">${lastMaint}</span>`
         : '<span style="color: #94A3B8; font-style: italic;">PENDIENTE DE DATOS</span>';
 
       // 6. PRÓXIMO SERVICIO
-      const nextServHtml = (item.nextServiceType && item.nextServiceType !== 'PENDIENTE DE CONFIGURACIÓN')
-        ? `<span class="badge-next-service">${item.nextServiceType}</span>`
+      const nextServ = item.nextServiceType || item.metrics?.nextServiceType || item.nextMaintenance?.plan;
+      const nextServHtml = (nextServ && nextServ !== 'PENDIENTE DE CONFIGURACIÓN')
+        ? `<span class="badge-next-service">${nextServ}</span>`
         : '<span style="color: #94A3B8; font-style: italic;">PENDIENTE DE CONFIGURACIÓN</span>';
 
       // 7. FECHA ESTIMADA (+3 meses calendario)
-      const estDateHtml = item.estimatedDate
-        ? `<strong>${this.formatDateSpanish(item.estimatedDate)}</strong>`
+      const estDate = item.estimatedDate || item.metrics?.quarterlyEstimatedDate || item.metrics?.usageEstimatedDate;
+      const estDateHtml = estDate
+        ? `<strong>${this.formatDateSpanish(estDate)}</strong>`
         : '<span style="color: #94A3B8; font-style: italic;">PENDIENTE DE DATOS</span>';
 
       // 8. ESTADO (AL DÍA, PRÓXIMO, VENCIDO, PENDIENTE DE DATOS)
-      const statusHtml = this.formatSimplifiedStatusBadge(item.simplifiedStatus);
+      const statusVal = item.simplifiedStatus || item.metrics?.simplifiedStatus || item.status;
+      const statusHtml = this.formatSimplifiedStatusBadge(statusVal);
 
       // ACCIONES
       const actionsHtml = `
@@ -4635,13 +4650,16 @@ class IndustracApp {
 
     container.innerHTML = list.map(item => {
       const serialOrId = item.serialNumber ? `S/N: ${item.serialNumber}` : (item.apiCode ? `ID: ${item.apiCode}` : 'S/N');
-      const lastServ = item.lastServiceDate ? this.formatDateSpanish(item.lastServiceDate) : 'PENDIENTE DE DATOS';
-      const lastHoro = (item.lastHorometer !== null && item.lastHorometer !== undefined && item.lastHorometer !== '')
-        ? `${Number(item.lastHorometer).toLocaleString()} hrs`
+      const lastServVal = item.lastServiceDate || item.metrics?.lastMaintDate || item.metrics?.lastReadingDate || item.lastReadingDate || item.lastMaintenance?.date;
+      const lastServ = lastServVal ? this.formatDateSpanish(lastServVal) : 'PENDIENTE DE DATOS';
+      const horoValMobile = item.lastHorometer ?? item.metrics?.lastHoro ?? item.metrics?.currentHours ?? item.hourMeter ?? item.hours;
+      const lastHoro = (horoValMobile !== null && horoValMobile !== undefined && horoValMobile !== '')
+        ? `${Number(horoValMobile).toLocaleString()} hrs`
         : 'PENDIENTE DE DATOS';
-      const lastMaint = item.lastMaintenanceType || 'PENDIENTE DE DATOS';
-      const nextServ = item.nextServiceType || 'PENDIENTE DE CONFIGURACIÓN';
-      const estDate = item.estimatedDate ? this.formatDateSpanish(item.estimatedDate) : 'PENDIENTE DE DATOS';
+      const lastMaint = item.lastMaintenanceType || item.metrics?.lastMaintenanceType || item.lastMaintenance?.plan || 'PENDIENTE DE DATOS';
+      const nextServ = item.nextServiceType || item.metrics?.nextServiceType || item.nextMaintenance?.plan || 'PENDIENTE DE CONFIGURACIÓN';
+      const estDateVal = item.estimatedDate || item.metrics?.quarterlyEstimatedDate || item.metrics?.usageEstimatedDate;
+      const estDate = estDateVal ? this.formatDateSpanish(estDateVal) : 'PENDIENTE DE DATOS';
 
       return `
         <div class="horometer-mobile-card" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">

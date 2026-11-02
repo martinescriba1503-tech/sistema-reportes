@@ -546,13 +546,44 @@ async function applyReportToEquipmentHorometer(report) {
   try {
     const equipments = await db.getEquipments();
     const eqIdx = matchReportToEquipment(report, equipments);
+    let eq;
 
     if (eqIdx === -1) {
-      console.warn(`[Horometers] No se encontró equipo asociado para el reporte ${report.reportNumber} (${report.client} - ${report.model}).`);
-      return { success: false, reason: 'No se encontró equipo en catálogo que coincida con el reporte.' };
+      if (report.client && report.model) {
+        console.log(`[Horometers] Auto-registrando equipo para reporte ${report.reportNumber} (${report.client} - ${report.model})`);
+        const clients = await db.getClients();
+        const matchedClient = clients.find(c => (c.name || '').trim().toLowerCase() === (report.client || '').trim().toLowerCase());
+        const newEq = {
+          id: `eq-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          clientId: matchedClient ? matchedClient.id : null,
+          client: report.client.trim(),
+          address: report.address || (matchedClient ? matchedClient.address : ''),
+          manufacturer: report.manufacturer || '',
+          model: report.model.trim(),
+          serialNumber: report.serialNumber || '',
+          apiCode: report.apiCode || '',
+          controller: report.controller || '',
+          pressure: report.pressure || '',
+          airflow: report.airflow || '',
+          oilType: report.oilType || '',
+          hourMeter: Number(report.hourMeter || 0),
+          hours: Number(report.hourMeter || 0),
+          maintenanceCycle: 'ciclo_2000',
+          cycleType: 'ciclo_2000',
+          status: 'Activo',
+          active: true,
+          readingsHistory: [],
+          lastMaintenance: null,
+          nextMaintenance: null
+        };
+        eq = await db.createEquipment(newEq);
+      } else {
+        console.warn(`[Horometers] No se encontró equipo asociado para el reporte ${report.reportNumber} (${report.client} - ${report.model}).`);
+        return { success: false, reason: 'No se encontró equipo en catálogo que coincida con el reporte.' };
+      }
+    } else {
+      eq = equipments[eqIdx];
     }
-
-    const eq = equipments[eqIdx];
     const repHourMeter = Number(report.hourMeter);
     const validHour = !isNaN(repHourMeter) && repHourMeter >= 0;
     const currentEqHours = Number(eq.hourMeter) || Number(eq.hours) || 0;
@@ -629,6 +660,28 @@ async function applyReportToEquipmentHorometer(report) {
     eq.updatedAt = new Date().toISOString();
 
     await db.updateEquipment(eq.id, eq);
+
+    // Sincronizar también con la tabla individual hourmeter_readings en Supabase
+    try {
+      const sb = db.getSupabase();
+      if (sb) {
+        await sb.from('hourmeter_readings').insert([{
+          id: histEntry.id,
+          equipment_id: eq.id,
+          date: histEntry.date,
+          hour_meter: histEntry.hourMeter,
+          hours: histEntry.hours,
+          type: 'mantenimiento',
+          plan: histEntry.plan,
+          report_number: histEntry.reportNumber,
+          notes: histEntry.notes,
+          user_name: histEntry.user || 'Técnico INDUSTRAC',
+          created_at: new Date().toISOString()
+        }]);
+      }
+    } catch (eHoroDb) {
+      console.warn('[Horometers] Aviso al insertar en hourmeter_readings:', eHoroDb.message);
+    }
 
     return {
       success: true,
@@ -1417,6 +1470,18 @@ app.get('/api/horometers', requireAuth, async (req, res) => {
       const metrics = calculateEquipmentHorometerMetrics(eq);
       return {
         ...eq,
+        simplifiedStatus: metrics.simplifiedStatus,
+        lastHorometer: metrics.lastHoro !== null ? metrics.lastHoro : (metrics.currentHours ?? eq.hourMeter ?? eq.hours),
+        lastServiceDate: metrics.lastMaintDate || metrics.lastReadingDate || null,
+        lastMaintenanceType: metrics.lastMaintenanceType || null,
+        nextServiceType: metrics.nextServiceType || null,
+        estimatedDate: metrics.quarterlyEstimatedDate || metrics.usageEstimatedDate || null,
+        hoursRemaining: metrics.hoursRemaining,
+        nextMilestone: metrics.nextMilestone,
+        nextPlan: metrics.nextPlan,
+        status: metrics.status,
+        statusCode: metrics.statusCode,
+        statusIcon: metrics.statusIcon,
         metrics
       };
     });

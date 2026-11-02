@@ -1013,7 +1013,10 @@
                   <p>Verifique los datos registrados antes de generar el archivo PDF oficial descargable.</p>
                 </div>
               </div>
-              <div style="display: flex; gap: 0.75rem;">
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-outline-success" onclick="window.app.startNewReport()">
+                  ➕ Generar Nuevo Reporte
+                </button>
                 <button type="button" class="btn btn-secondary" onclick="window.app.previewReportPdf()">
                   👁️ Vista Previa en Pantalla
                 </button>
@@ -1322,9 +1325,12 @@
        ======================================================================== -->
   <footer class="bottom-actions-bar">
     <div class="bottom-actions-container">
-      <div class="bottom-actions-left">
+      <div class="bottom-actions-left" style="display: flex; gap: 0.5rem; align-items: center;">
         <button type="button" id="btn-save-draft" class="btn btn-secondary">
           💾 Guardar Borrador
+        </button>
+        <button type="button" id="btn-new-report-bottom" class="btn btn-outline-success btn-sm" onclick="window.app.startNewReport()" title="Iniciar un nuevo reporte en blanco">
+          ➕ Nuevo Reporte
         </button>
       </div>
 
