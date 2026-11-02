@@ -713,11 +713,15 @@ app.get('/api/health', async (req, res) => {
     if (!hasSecretKey) missingVars.push('SUPABASE_SECRET_KEY');
     if (!process.env.API_SECRET_KEY) missingVars.push('API_SECRET_KEY');
 
+    const keyVal = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
+    const keyType = keyVal.startsWith('sb_secret_') ? 'service_role_secret' : (keyVal.startsWith('eyJ') ? 'jwt' : (keyVal ? 'unknown' : 'none'));
+
     res.json({
       status: 'ok',
       engine: 'Supabase PostgreSQL',
       supabaseConfigured: Boolean(process.env.SUPABASE_URL && hasSecretKey),
       supabaseConnected: conn.ok,
+      keyType,
       missingVars,
       error: conn.error || null,
       environment: process.env.VERCEL ? 'vercel-serverless' : 'local',
