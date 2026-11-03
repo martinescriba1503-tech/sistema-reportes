@@ -990,7 +990,6 @@ class IndustracApp {
       this.renderAutoLoadedPartsBox(this.reportData.maintenanceType);
     }
   }
-  }
 
   // --- PERSISTENCIA LOCAL Y ANTI-BORRADO EN RECARGAS ---
   restoreLocalCatalogCache() {
