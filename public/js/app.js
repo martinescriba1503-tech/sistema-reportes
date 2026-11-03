@@ -4877,7 +4877,7 @@ class IndustracApp {
               <span class="badge-next-service" style="display: inline-block; margin-top: 2px;">${nextServ}</span>
             </div>
             <div style="background: #F8FAFC; padding: 6px 8px; border-radius: 4px; grid-column: span 2;">
-              <span style="color: #64748B; display: block; font-size: 0.72rem; text-transform: uppercase;">Fecha Estimada (+3 meses)</span>
+              <span style="color: #64748B; display: block; font-size: 0.72rem; text-transform: uppercase;">Fecha Estimada</span>
               <strong style="color: #031240;">${estDate}</strong>
             </div>
           </div>
@@ -5214,6 +5214,7 @@ class IndustracApp {
   autoCalculateNextMilestoneFromConfig() {
     const cycle = document.getElementById('field-config-cycle')?.value || 'ciclo_2000';
     const lastHoursVal = parseFloat(document.getElementById('field-config-last-hours')?.value);
+    const lastPlanVal = document.getElementById('field-config-last-plan')?.value || '';
     const nextMilestoneInput = document.getElementById('field-config-next-milestone');
     const nextPlanSelect = document.getElementById('field-config-next-plan');
 
@@ -5228,15 +5229,32 @@ class IndustracApp {
 
     if (nextPlanSelect) {
       if (cycle === 'ciclo_3000') {
-        const mod12k = nextMilestone % 12000;
-        if (mod12k === 0) nextPlanSelect.value = 'Plan C — 12000 horas';
-        else if (mod12k === 6000) nextPlanSelect.value = 'Plan B — 6000 horas';
-        else nextPlanSelect.value = 'Plan A — 3000 horas';
+        if (lastPlanVal.includes('6000') || lastPlanVal.includes('12000')) {
+          nextPlanSelect.value = 'Plan A — 3000 horas';
+        } else if (lastPlanVal.includes('3000')) {
+          const mod12k = nextMilestone % 12000;
+          if (mod12k === 0) nextPlanSelect.value = 'Plan C — 12000 horas';
+          else nextPlanSelect.value = 'Plan B — 6000 horas';
+        } else {
+          const mod12k = nextMilestone % 12000;
+          if (mod12k === 0) nextPlanSelect.value = 'Plan C — 12000 horas';
+          else if (mod12k === 6000) nextPlanSelect.value = 'Plan B — 6000 horas';
+          else nextPlanSelect.value = 'Plan A — 3000 horas';
+        }
       } else {
-        const mod8k = nextMilestone % 8000;
-        if (mod8k === 0) nextPlanSelect.value = 'Plan C — 8000 horas';
-        else if (mod8k === 4000) nextPlanSelect.value = 'Plan B — 4000 horas';
-        else nextPlanSelect.value = 'Plan A — 2000 horas';
+        // Secuencia oficial INDUSTRAC: 2000 -> 4000 -> 2000 -> 8000
+        if (lastPlanVal.includes('4000') || lastPlanVal.includes('8000')) {
+          nextPlanSelect.value = 'Plan A — 2000 horas';
+        } else if (lastPlanVal.includes('2000')) {
+          const mod8k = nextMilestone % 8000;
+          if (mod8k === 0) nextPlanSelect.value = 'Plan C — 8000 horas';
+          else nextPlanSelect.value = 'Plan B — 4000 horas';
+        } else {
+          const mod8k = nextMilestone % 8000;
+          if (mod8k === 0) nextPlanSelect.value = 'Plan C — 8000 horas';
+          else if (mod8k === 4000) nextPlanSelect.value = 'Plan B — 4000 horas';
+          else nextPlanSelect.value = 'Plan A — 2000 horas';
+        }
       }
     }
   }

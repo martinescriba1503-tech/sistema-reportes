@@ -76,15 +76,43 @@ function addCalendarMonths(dateStr, monthsToAdd = 3) {
   return `${targetYear}-${pad(targetMonth + 1)}-${pad(targetDay)}`;
 }
 
-function formatMaintenanceTypeLabel(planOrHours) {
+function normalizePlanHours(planOrHours) {
   if (!planOrHours) return null;
   const s = String(planOrHours).toLowerCase();
-  if (s.includes('12000') || s.includes('12,000') || s === '12000') return '12,000 h';
-  if (s.includes('8000') || s.includes('8,000') || s === '8000') return '8,000 h';
-  if (s.includes('6000') || s.includes('6,000') || s === '6000') return '6,000 h';
-  if (s.includes('4000') || s.includes('4,000') || s === '4000') return '4,000 h';
-  if (s.includes('3000') || s.includes('3,000') || s === '3000') return '3,000 h';
-  if (s.includes('2000') || s.includes('2,000') || s === '2000') return '2,000 h';
+  if (s.includes('12000') || s.includes('12,000')) return 12000;
+  if (s.includes('8000') || s.includes('8,000')) return 8000;
+  if (s.includes('6000') || s.includes('6,000')) return 6000;
+  if (s.includes('4000') || s.includes('4,000')) return 4000;
+  if (s.includes('3000') || s.includes('3,000')) return 3000;
+  if (s.includes('2000') || s.includes('2,000')) return 2000;
+  const num = parseInt(s.replace(/[^0-9]/g, ''), 10);
+  return isNaN(num) ? null : num;
+}
+
+function calculateEstimatedNextDate(baseDateStr, intervalHours = 2000) {
+  if (!baseDateStr) return null;
+  const parts = String(baseDateStr).split('T')[0].split('-');
+  if (parts.length < 3) return null;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+
+  // Lógica INDUSTRAC: 2000h de operación continua equivalen a (2000/24) = ~83.33 días
+  const dateObj = new Date(Date.UTC(y, m, d, 12, 0, 0));
+  const msToAdd = (Number(intervalHours) / 24) * 86400000;
+  dateObj.setTime(dateObj.getTime() + Math.round(msToAdd));
+
+  const resY = dateObj.getUTCFullYear();
+  const resM = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const resD = String(dateObj.getUTCDate()).padStart(2, '0');
+  return `${resY}-${resM}-${resD}`;
+}
+
+function formatMaintenanceTypeLabel(planOrHours) {
+  if (!planOrHours) return null;
+  const h = normalizePlanHours(planOrHours);
+  if (h) return `${h.toLocaleString('en-US')} h`;
   return String(planOrHours);
 }
 
@@ -114,74 +142,80 @@ function computeNextMilestoneHours(lastMaintHours, cycle = 'ciclo_2000') {
 function determineNextMaintenancePlan(equipment, lastMaint = null) {
   const cycle = equipment.maintenanceCycle || equipment.cycleType || 'ciclo_2000';
   const isCycle3k = cycle === 'ciclo_3000';
+  const step = isCycle3k ? 3000 : 2000;
   const lm = lastMaint || equipment.lastMaintenance || null;
 
   if (!lm || ((lm.hourMeter === undefined || lm.hourMeter === null || lm.hourMeter === '') && !lm.plan && !lm.date)) {
     return {
-      nextPlan: null,
-      nextServiceType: 'PENDIENTE DE CONFIGURACIÓN',
-      nextMilestoneHours: null
+      nextPlan: isCycle3k ? 'Plan A — 3000 horas' : 'Plan A — 2000 horas',
+      nextServiceType: isCycle3k ? '3,000 h' : '2,000 h',
+      nextMilestoneHours: step
     };
   }
 
   const lastHours = Number(lm.hourMeter !== undefined && lm.hourMeter !== null && lm.hourMeter !== '' ? lm.hourMeter : (lm.hours || 0));
-  const lastPlanLabel = formatMaintenanceTypeLabel(lm.plan);
+  const nextMilestoneHours = lastHours > 0 ? (Math.floor(lastHours / step) + 1) * step : step;
+  const lastPlanHours = normalizePlanHours(lm.plan) || normalizePlanHours(lastHours);
 
-  const history = Array.isArray(equipment.readingsHistory) ? [...equipment.readingsHistory] : [];
+  const history = Array.isArray(equipment.readingsHistory) ? equipment.readingsHistory : [];
   const maintHistory = history
     .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
     .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0) || (Number(a.hourMeter || 0) - Number(b.hourMeter || 0)));
 
   if (isCycle3k) {
-    const step = 3000;
-    const nextMilestoneHours = (Math.floor(lastHours / step) + 1) * step;
-
-    let nextServiceType = '3,000 h';
     let nextPlanName = 'Plan A — 3000 horas';
+    let nextServiceType = '3,000 h';
 
-    if (lastPlanLabel === '6,000 h') {
-      nextServiceType = '3,000 h';
+    if (lastPlanHours === 6000 || lastPlanHours === 12000) {
       nextPlanName = 'Plan A — 3000 horas';
-    } else if (lastPlanLabel === '12,000 h') {
       nextServiceType = '3,000 h';
-      nextPlanName = 'Plan A — 3000 horas';
-    } else if (lastPlanLabel === '3,000 h') {
-      let prevMaint = null;
-      if (maintHistory.length >= 2) {
-        prevMaint = maintHistory[maintHistory.length - 2];
+    } else if (lastPlanHours === 3000) {
+      let prevMajor = null;
+      let searchStartIndex = maintHistory.length - 1;
+      if (searchStartIndex >= 0) {
+        const lastInHist = maintHistory[searchStartIndex];
+        const sameHoro = Number(lastInHist.hourMeter || lastInHist.hours) === lastHours;
+        const sameDate = lm.date && lastInHist.date === lm.date;
+        if (sameHoro || sameDate) {
+          searchStartIndex--;
+        }
       }
-      const prevLabel = prevMaint ? formatMaintenanceTypeLabel(prevMaint.plan) : null;
+      for (let i = searchStartIndex; i >= 0; i--) {
+        const ph = normalizePlanHours(maintHistory[i].plan) || normalizePlanHours(maintHistory[i].hourMeter);
+        if (ph === 6000 || ph === 12000) {
+          prevMajor = ph;
+          break;
+        }
+      }
 
-      if (prevLabel === '6,000 h') {
-        nextServiceType = '12,000 h';
+      if (prevMajor === 6000) {
         nextPlanName = 'Plan C — 12000 horas';
-      } else if (prevLabel === '12,000 h') {
-        nextServiceType = '6,000 h';
+        nextServiceType = '12,000 h';
+      } else if (prevMajor === 12000) {
         nextPlanName = 'Plan B — 6000 horas';
+        nextServiceType = '6,000 h';
       } else {
-        const rem = nextMilestoneHours % 12000;
-        if (rem === 6000) {
-          nextServiceType = '6,000 h';
-          nextPlanName = 'Plan B — 6000 horas';
-        } else if (rem === 0) {
-          nextServiceType = '12,000 h';
+        const stepIndex = Math.round(lastHours / 3000);
+        if (stepIndex % 4 === 3) {
           nextPlanName = 'Plan C — 12000 horas';
+          nextServiceType = '12,000 h';
         } else {
-          nextServiceType = '3,000 h';
-          nextPlanName = 'Plan A — 3000 horas';
+          nextPlanName = 'Plan B — 6000 horas';
+          nextServiceType = '6,000 h';
         }
       }
     } else {
-      const rem = nextMilestoneHours % 12000;
-      if (rem === 3000 || rem === 9000) {
-        nextServiceType = '3,000 h';
+      const stepIndex = Math.round(nextMilestoneHours / 3000);
+      const rem = stepIndex % 4;
+      if (rem === 1 || rem === 3) {
         nextPlanName = 'Plan A — 3000 horas';
-      } else if (rem === 6000) {
-        nextServiceType = '6,000 h';
+        nextServiceType = '3,000 h';
+      } else if (rem === 2) {
         nextPlanName = 'Plan B — 6000 horas';
+        nextServiceType = '6,000 h';
       } else {
-        nextServiceType = '12,000 h';
         nextPlanName = 'Plan C — 12000 horas';
+        nextServiceType = '12,000 h';
       }
     }
 
@@ -191,55 +225,66 @@ function determineNextMaintenancePlan(equipment, lastMaint = null) {
       nextMilestoneHours
     };
   } else {
-    const step = 2000;
-    const nextMilestoneHours = (Math.floor(lastHours / step) + 1) * step;
-
-    let nextServiceType = '2,000 h';
+    // Secuencia oficial INDUSTRAC (ciclo_2000): 2000 -> 4000 -> 2000 -> 8000 -> 2000 -> 4000 -> ...
     let nextPlanName = 'Plan A — 2000 horas';
+    let nextServiceType = '2,000 h';
 
-    if (lastPlanLabel === '4,000 h') {
-      nextServiceType = '2,000 h';
+    if (lastPlanHours === 4000 || lastPlanHours === 8000) {
+      // Después de 4000h o de 8000h, SIEMPRE sigue 2000h (Plan A)
       nextPlanName = 'Plan A — 2000 horas';
-    } else if (lastPlanLabel === '8,000 h') {
       nextServiceType = '2,000 h';
-      nextPlanName = 'Plan A — 2000 horas';
-    } else if (lastPlanLabel === '2,000 h') {
-      let prevMaint = null;
-      if (maintHistory.length >= 2) {
-        prevMaint = maintHistory[maintHistory.length - 2];
+    } else if (lastPlanHours === 2000) {
+      // Después de 2000h, determinar si sigue 4000h o 8000h según historial previo
+      let prevMajor = null;
+      let searchStartIndex = maintHistory.length - 1;
+      if (searchStartIndex >= 0) {
+        const lastInHist = maintHistory[searchStartIndex];
+        const sameHoro = Number(lastInHist.hourMeter || lastInHist.hours) === lastHours;
+        const sameDate = lm.date && lastInHist.date === lm.date;
+        if (sameHoro || sameDate) {
+          searchStartIndex--;
+        }
       }
-      const prevLabel = prevMaint ? formatMaintenanceTypeLabel(prevMaint.plan) : null;
+      for (let i = searchStartIndex; i >= 0; i--) {
+        const ph = normalizePlanHours(maintHistory[i].plan) || normalizePlanHours(maintHistory[i].hourMeter);
+        if (ph === 4000 || ph === 8000) {
+          prevMajor = ph;
+          break;
+        }
+      }
 
-      if (prevLabel === '4,000 h') {
-        nextServiceType = '8,000 h';
+      if (prevMajor === 4000) {
+        // El servicio mayor previo fue 4000h -> corresponde 8000h (Plan C)
         nextPlanName = 'Plan C — 8000 horas';
-      } else if (prevLabel === '8,000 h') {
-        nextServiceType = '4,000 h';
+        nextServiceType = '8,000 h';
+      } else if (prevMajor === 8000) {
+        // El servicio mayor previo fue 8000h -> corresponde 4000h (Plan B)
         nextPlanName = 'Plan B — 4000 horas';
+        nextServiceType = '4,000 h';
       } else {
-        const rem = nextMilestoneHours % 8000;
-        if (rem === 4000) {
-          nextServiceType = '4,000 h';
-          nextPlanName = 'Plan B — 4000 horas';
-        } else if (rem === 0) {
-          nextServiceType = '8,000 h';
+        // Sin servicio mayor previo registrado: inferir posición cíclica por horas acumuladas
+        const stepIndex = Math.round(lastHours / 2000);
+        if (stepIndex % 4 === 3) {
           nextPlanName = 'Plan C — 8000 horas';
+          nextServiceType = '8,000 h';
         } else {
-          nextServiceType = '2,000 h';
-          nextPlanName = 'Plan A — 2000 horas';
+          nextPlanName = 'Plan B — 4000 horas';
+          nextServiceType = '4,000 h';
         }
       }
     } else {
-      const rem = nextMilestoneHours % 8000;
-      if (rem === 2000 || rem === 6000) {
-        nextServiceType = '2,000 h';
+      // Fallback si no se tiene especificado el plan del último servicio
+      const stepIndex = Math.round(nextMilestoneHours / 2000);
+      const rem = stepIndex % 4;
+      if (rem === 1 || rem === 3) {
         nextPlanName = 'Plan A — 2000 horas';
-      } else if (rem === 4000) {
-        nextServiceType = '4,000 h';
+        nextServiceType = '2,000 h';
+      } else if (rem === 2) {
         nextPlanName = 'Plan B — 4000 horas';
+        nextServiceType = '4,000 h';
       } else {
-        nextServiceType = '8,000 h';
         nextPlanName = 'Plan C — 8000 horas';
+        nextServiceType = '8,000 h';
       }
     }
 
@@ -254,7 +299,8 @@ function determineNextMaintenancePlan(equipment, lastMaint = null) {
 function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   const today = currentDateStr || new Date().toISOString().split('T')[0];
   const cycle = equipment.maintenanceCycle || equipment.cycleType || 'ciclo_2000';
-  const step = cycle === 'ciclo_3000' ? 3000 : 2000;
+  const isCycle3k = cycle === 'ciclo_3000';
+  const step = isCycle3k ? 3000 : 2000;
   const currentHours = Number(equipment.hourMeter !== undefined && equipment.hourMeter !== null && equipment.hourMeter !== '' ? equipment.hourMeter : (equipment.hours || 0)) || 0;
 
   const lastMaint = equipment.lastMaintenance || null;
@@ -266,13 +312,17 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     : null;
   let lastMaintPlan = lastMaint?.plan || null;
 
-  const seq = determineNextMaintenancePlan(equipment, lastMaint);
-  let nextMilestone = nextMaintConfig?.milestoneHours ? Number(nextMaintConfig.milestoneHours) : seq.nextMilestoneHours;
-  let nextPlan = nextMaintConfig?.plan || seq.nextPlan;
-  let nextServiceType = seq.nextServiceType;
-  let lastMaintenanceType = formatMaintenanceTypeLabel(lastMaintPlan) || (lastMaintDate ? lastMaintPlan : null);
-
   const history = Array.isArray(equipment.readingsHistory) ? equipment.readingsHistory : [];
+  const maintHistory = history
+    .filter(h => (h.type === 'mantenimiento' || h.type === 'maintenance' || h.plan) && h.type !== 'reading')
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || (Number(b.hourMeter || 0) - Number(a.hourMeter || 0)));
+
+  if (maintHistory.length > 0) {
+    if (!lastMaintDate) lastMaintDate = maintHistory[0].date || null;
+    if (lastMaintHours === null && maintHistory[0].hourMeter !== undefined) lastMaintHours = Number(maintHistory[0].hourMeter);
+    if (!lastMaintPlan) lastMaintPlan = maintHistory[0].plan || null;
+  }
+
   const latestHistoryEntry = history.length > 0 ? history[0] : null;
 
   let lastHoro = null;
@@ -286,28 +336,20 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
 
   let lastReadingDate = lastMaintDate || equipment.lastReadingDate || (latestHistoryEntry ? latestHistoryEntry.date : null);
 
-  if (nextMilestone === null) {
-    if (lastMaintHours !== null) {
-      nextMilestone = seq.nextMilestoneHours || computeNextMilestoneHours(lastMaintHours, cycle);
-    } else if (currentHours > 0) {
-      nextMilestone = computeNextMilestoneHours(currentHours, cycle);
-    }
-  }
-  if (!nextPlan && nextMilestone !== null) {
-    nextPlan = seq.nextPlan || getPlanForMilestone(nextMilestone, cycle);
-  }
-  if (!nextServiceType || nextServiceType === 'PENDIENTE DE CONFIGURACIÓN') {
-    if (nextMilestone !== null) {
-      nextServiceType = formatMaintenanceTypeLabel(nextMilestone) || `${nextMilestone.toLocaleString('en-US')} h`;
-    }
-  }
+  // Determinar próximo servicio según la secuencia cíclica establecida
+  const seq = determineNextMaintenancePlan(equipment, {
+    date: lastMaintDate,
+    hourMeter: lastMaintHours,
+    plan: lastMaintPlan
+  });
 
-  if (!lastMaintenanceType && currentHours > 0) {
-    const prevMilestone = Math.floor(currentHours / step) * step;
-    if (prevMilestone > 0) {
-      const prevPlan = getPlanForMilestone(prevMilestone, cycle);
-      lastMaintenanceType = formatMaintenanceTypeLabel(prevPlan) || formatMaintenanceTypeLabel(prevMilestone) || `${prevMilestone.toLocaleString('en-US')} h`;
-    }
+  let nextMilestone = nextMaintConfig?.milestoneHours ? Number(nextMaintConfig.milestoneHours) : seq.nextMilestoneHours;
+  let nextPlan = nextMaintConfig?.plan || seq.nextPlan;
+  let nextServiceType = seq.nextServiceType || formatMaintenanceTypeLabel(nextPlan) || (isCycle3k ? '3,000 h' : '2,000 h');
+
+  let lastMaintenanceType = formatMaintenanceTypeLabel(lastMaintPlan);
+  if (!lastMaintenanceType && lastMaintDate && lastMaintHours !== null) {
+    lastMaintenanceType = formatMaintenanceTypeLabel(lastMaintHours);
   }
 
   const hasHistoryOrConfig = (lastMaintHours !== null && lastMaintDate) || nextMilestone !== null || currentHours > 0 || history.length > 0;
@@ -319,7 +361,7 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
       statusLabel: 'Pendiente de configuración',
       simplifiedStatus: 'PENDIENTE DE DATOS',
       lastMaintenanceType: null,
-      nextServiceType: 'PENDIENTE DE CONFIGURACIÓN',
+      nextServiceType: isCycle3k ? '3,000 h' : '2,000 h',
       statusColor: 'slate',
       statusIcon: '⚪',
       currentHours,
@@ -328,10 +370,11 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
       lastMaintDate: null,
       lastMaintHours: null,
       lastMaintPlan: null,
-      nextMilestone: null,
-      nextPlan: null,
+      nextMilestone: step,
+      nextPlan: isCycle3k ? 'Plan A — 3000 horas' : 'Plan A — 2000 horas',
       hoursRemaining: null,
       quarterlyEstimatedDate: null,
+      estimatedDate: null,
       usageEstimatedDate: null,
       isHoursOverdue: false,
       isDateOverdue: false,
@@ -347,17 +390,19 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     };
   }
 
-  if (nextMilestone === null && lastMaintHours !== null) {
-    nextMilestone = seq.nextMilestoneHours || computeNextMilestoneHours(lastMaintHours, cycle);
+  if (nextMilestone === null) {
+    nextMilestone = seq.nextMilestoneHours || (lastMaintHours !== null ? (Math.floor(lastMaintHours / step) + 1) * step : step);
   }
-  if (!nextPlan && nextMilestone !== null) {
-    nextPlan = seq.nextPlan || getPlanForMilestone(nextMilestone, cycle);
+  if (!nextPlan) {
+    nextPlan = seq.nextPlan || (isCycle3k ? 'Plan A — 3000 horas' : 'Plan A — 2000 horas');
   }
 
   const hoursRemaining = nextMilestone !== null ? (nextMilestone - currentHours) : null;
-  const quarterlyEstimatedDate = lastMaintDate
-    ? addCalendarMonths(lastMaintDate, 3)
-    : (lastReadingDate ? addCalendarMonths(lastReadingDate, 3) : null);
+
+  // Fecha estimada según lógica oficial INDUSTRAC: última fecha de servicio + (step / 24) días de operación continua
+  const baseServiceDate = lastMaintDate || null;
+  const estimatedDate = baseServiceDate ? calculateEstimatedNextDate(baseServiceDate, step) : null;
+  const quarterlyEstimatedDate = estimatedDate; // Mantener alias para compatibilidad
 
   let usageEstimatedDate = null;
   const monthlyAvg = Number(equipment.monthlyAverageHours) || 0;
@@ -379,9 +424,9 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
   let isDateNear = false;
   let daysUntilTrim = null;
 
-  if (quarterlyEstimatedDate) {
+  if (estimatedDate) {
     const todayMs = new Date(today + 'T00:00:00').getTime();
-    const trimMs = new Date(quarterlyEstimatedDate + 'T00:00:00').getTime();
+    const trimMs = new Date(estimatedDate + 'T00:00:00').getTime();
     const diffDays = Math.round((trimMs - todayMs) / (1000 * 60 * 60 * 24));
     daysUntilTrim = diffDays;
     if (diffDays <= 0) {
@@ -422,11 +467,11 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     urgencyScore = 90 + Math.abs(hoursRemaining || 0);
   } else if (isDateOverdue) {
     statusCode = 'overdue_date';
-    statusLabel = 'Vencido por fecha trimestral';
+    statusLabel = 'Vencido por fecha estimada';
     simplifiedStatus = 'VENCIDO';
     statusColor = 'red';
     statusIcon = '🔴';
-    alertReason = `Fecha trimestral superada por ${Math.abs(daysUntilTrim)} días.`;
+    alertReason = `Fecha estimada de mantenimiento superada por ${Math.abs(daysUntilTrim)} días.`;
     urgencyRank = 3;
     urgencyScore = 80 + Math.abs(daysUntilTrim || 0);
   } else if (isHoursNear && isDateNear) {
@@ -449,11 +494,11 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     urgencyScore = 50 + (alertThreshold - (hoursRemaining || 0));
   } else if (isDateNear) {
     statusCode = 'near_date';
-    statusLabel = 'Próximo por fecha trimestral';
+    statusLabel = 'Próximo por fecha estimada';
     simplifiedStatus = 'POR VENCER';
     statusColor = 'amber';
     statusIcon = '🟡';
-    alertReason = `Quedan ${daysUntilTrim} días para la fecha trimestral programada.`;
+    alertReason = `Quedan ${daysUntilTrim} días para la fecha estimada programada.`;
     urgencyRank = 6;
     urgencyScore = 40 + (15 - (daysUntilTrim || 0));
   } else {
@@ -481,6 +526,7 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     nextPlan,
     hoursRemaining,
     quarterlyEstimatedDate,
+    estimatedDate,
     usageEstimatedDate,
     isHoursOverdue,
     isDateOverdue,
@@ -492,6 +538,7 @@ function calculateEquipmentHorometerMetrics(equipment, currentDateStr = null) {
     multipleMilestonesWarning,
     alertReason,
     daysUntilTrim,
+    daysUntilEstimated: daysUntilTrim,
     urgencyRank,
     urgencyScore
   };
@@ -1394,9 +1441,15 @@ app.put('/api/equipments/:id/maintenance-config', authorizeWrite, async (req, re
     const cycle = eq.maintenanceCycle || 'ciclo_2000';
     let calcNextMilestone = req.body.nextMilestoneHours !== undefined && req.body.nextMilestoneHours !== null && req.body.nextMilestoneHours !== ''
       ? Number(req.body.nextMilestoneHours)
-      : (eq.lastMaintenance?.hourMeter !== undefined ? computeNextMilestoneHours(eq.lastMaintenance.hourMeter, cycle) : null);
+      : null;
 
-    let calcNextPlan = req.body.nextPlan || (calcNextMilestone !== null ? getPlanForMilestone(calcNextMilestone, cycle) : null);
+    let calcNextPlan = req.body.nextPlan || null;
+
+    if (!calcNextMilestone || !calcNextPlan) {
+      const seq = determineNextMaintenancePlan(eq, eq.lastMaintenance);
+      if (!calcNextMilestone) calcNextMilestone = seq.nextMilestoneHours;
+      if (!calcNextPlan) calcNextPlan = seq.nextPlan;
+    }
 
     eq.nextMaintenance = {
       milestoneHours: calcNextMilestone,
@@ -1472,10 +1525,10 @@ app.get('/api/horometers', requireAuth, async (req, res) => {
         ...eq,
         simplifiedStatus: metrics.simplifiedStatus,
         lastHorometer: metrics.lastHoro !== null ? metrics.lastHoro : (metrics.currentHours ?? eq.hourMeter ?? eq.hours),
-        lastServiceDate: metrics.lastMaintDate || metrics.lastReadingDate || null,
+        lastServiceDate: metrics.lastMaintDate || null,
         lastMaintenanceType: metrics.lastMaintenanceType || null,
         nextServiceType: metrics.nextServiceType || null,
-        estimatedDate: metrics.quarterlyEstimatedDate || metrics.usageEstimatedDate || null,
+        estimatedDate: metrics.estimatedDate || metrics.quarterlyEstimatedDate || null,
         hoursRemaining: metrics.hoursRemaining,
         nextMilestone: metrics.nextMilestone,
         nextPlan: metrics.nextPlan,
