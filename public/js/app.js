@@ -4800,7 +4800,7 @@ class IndustracApp {
           <button type="button" class="btn-horometer-action btn-action-hist" title="Ver Ficha Técnica e Historial" onclick="window.app.openHorometerHistoryModal('${item.id}')">
             📋
           </button>
-          <button type="button" class="btn-horometer-action btn-action-delete" title="Borrar / Restablecer Horómetro o Eliminar Equipo" onclick="window.app.openDeleteHorometerModal('${item.id}')" style="color: #DC2626; border-color: #FCA5A5;">
+          <button type="button" class="btn-horometer-action btn-action-delete" title="Borrar Datos de Horómetro (Restablecer a Pendiente de Datos)" onclick="window.app.openDeleteHorometerModal('${item.id}')" style="color: #DC2626; border-color: #FCA5A5;">
             🗑️
           </button>
         </div>
@@ -5466,40 +5466,43 @@ class IndustracApp {
     if (modal) modal.classList.remove('active');
   }
 
-  async confirmResetHorometer() {
+  async executeResetHorometer() {
     const eqIdEl = document.getElementById('delete-horo-eq-id');
-    const eqId = eqIdEl ? eqIdEl.value : null;
+    const eqId = eqIdEl ? eqIdEl.value : (this.currentHorometerEquipment?.id || null);
     if (!eqId) return;
 
-    this.closeDeleteHorometerModal();
-
-    const confirmed = await this.showConfirmModal({
-      title: 'Restablecer Horómetro',
-      message: '¿Está seguro de restablecer el horómetro y borrar el historial de lecturas de este equipo?<br><br><span style="color: var(--color-text-muted); font-size: 0.85rem;">El equipo se conservará en el catálogo y su estado pasará a <strong>PENDIENTE DE DATOS</strong>.</span>',
-      confirmText: '🔄 Sí, Restablecer Horómetro',
-      cancelText: 'Cancelar',
-      isDanger: false,
-      icon: '🔄'
-    });
-
-    if (!confirmed) return;
+    const btnSubmit = document.getElementById('btn-confirm-reset-horo');
+    if (btnSubmit) {
+      btnSubmit.disabled = true;
+      btnSubmit.innerHTML = '⏳ Borrando datos...';
+    }
 
     try {
-      this.showToast('Restableciendo horómetro del equipo...', 'info');
+      this.showToast('Borrando datos de horómetro del equipo...', 'info');
       const res = await this.fetchWithAuth(`/api/equipments/${encodeURIComponent(eqId)}/horometer`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success !== false) {
-        this.showToast('Horómetro restablecido a Pendiente de Datos exitosamente.', 'success');
+        this.closeDeleteHorometerModal();
+        this.showToast('¡Datos de horómetro borrados exitosamente! El equipo volvió a "PENDIENTE DE DATOS".', 'success');
         await this.loadHorometersData();
         await this.loadEquipments();
       } else {
-        throw new Error(data.error || 'Error al restablecer horómetro');
+        throw new Error(data.error || 'Error al borrar datos de horómetro');
       }
     } catch (e) {
-      console.error('Error al restablecer horómetro:', e);
-      this.showToast('No se pudo restablecer el horómetro: ' + e.message, 'error');
+      console.error('Error al borrar datos de horómetro:', e);
+      this.showToast('No se pudieron borrar los datos: ' + e.message, 'error');
+    } finally {
+      if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '🗑️ Sí, Borrar Datos de Horómetro';
+      }
     }
+  }
+
+  async confirmResetHorometer() {
+    return this.executeResetHorometer();
   }
 
   async confirmDeleteEquipmentFromHorometer() {

@@ -1509,8 +1509,18 @@ app.delete('/api/equipments/:id/horometer', authorizeWrite, async (req, res) => 
     eq.hourMeter = '0';
     eq.hours = 0;
 
+    // Limpiar también registros individuales en Supabase
+    try {
+      const sb = db.getSupabase();
+      if (sb) {
+        await sb.from('hourmeter_readings').delete().eq('equipment_id', req.params.id);
+      }
+    } catch (eSb) {
+      console.warn('[Horometers] Advertencia al limpiar tabla hourmeter_readings:', eSb.message);
+    }
+
     const saved = await db.updateEquipment(req.params.id, eq);
-    res.json({ success: true, message: 'Horómetro restablecido exitosamente.', equipment: saved });
+    res.json({ success: true, message: 'Datos de horómetro restablecidos a Pendiente de Datos exitosamente.', equipment: saved });
   } catch (err) {
     res.status(err.status || 500).json({ error: 'Error al restablecer horómetro: ' + err.message });
   }
