@@ -592,35 +592,61 @@ async function getNextReportNumber(peekOnly = false) {
 // ----------------------------------------------------------------------------
 
 async function getMaintenancePlans() {
-  const sb = getClientOrThrow();
-  const { data, error } = await sb
-    .from('maintenance_plans')
-    .select('*')
-    .eq('id', 'default_plans')
-    .single();
+  try {
+    const sb = getClientOrThrow();
+    const { data, error } = await sb
+      .from('maintenance_plans')
+      .select('*')
+      .eq('id', 'default_plans')
+      .single();
 
-  if (error && error.code !== 'PGRST116') throw error;
+    if (error && error.code !== 'PGRST116') throw error;
 
-  if (!data) {
-    return { allTasks: [], defaultPlans: {}, customModelPlans: {} };
-  }
+    if (data && data.default_plans && Object.keys(data.default_plans).length > 0) {
+      // Compatibilidad bidireccional para claves con guion largo (—) y guion simple (-)
+      const rawPlans = data.default_plans || {};
+      const normalizedPlans = { ...rawPlans };
+      for (const [k, v] of Object.entries(rawPlans)) {
+        if (k.includes(' — ')) {
+          normalizedPlans[k.replace(' — ', ' - ')] = v;
+        } else if (k.includes(' - ')) {
+          normalizedPlans[k.replace(' - ', ' — ')] = v;
+        }
+      }
 
-  // Compatibilidad bidireccional para claves con guion largo (—) y guion simple (-)
-  const rawPlans = data.default_plans || {};
-  const normalizedPlans = { ...rawPlans };
-  for (const [k, v] of Object.entries(rawPlans)) {
-    if (k.includes(' — ')) {
-      normalizedPlans[k.replace(' — ', ' - ')] = v;
-    } else if (k.includes(' - ')) {
-      normalizedPlans[k.replace(' - ', ' — ')] = v;
+      return {
+        allTasks: Array.isArray(data.all_tasks) ? data.all_tasks : [],
+        defaultPlans: normalizedPlans,
+        customModelPlans: data.custom_model_plans || {}
+      };
     }
+  } catch (err) {
+    console.warn('[Supabase] Aviso al consultar planes en Supabase, recurriendo a archivo local plans.json:', err.message);
   }
 
-  return {
-    allTasks: Array.isArray(data.all_tasks) ? data.all_tasks : [],
-    defaultPlans: normalizedPlans,
-    customModelPlans: data.custom_model_plans || {}
-  };
+  // Respaldo local de seguridad en caso de falla o tabla vacía
+  try {
+    const localPlansPath = path.join(__dirname, '..', 'data', 'plans.json');
+    if (fs.existsSync(localPlansPath)) {
+      const fileData = JSON.parse(fs.readFileSync(localPlansPath, 'utf8'));
+      const rawPlans = fileData.defaultPlans || {};
+      const normalizedPlans = { ...rawPlans };
+      for (const [k, v] of Object.entries(rawPlans)) {
+        if (k.includes(' — ')) {
+          normalizedPlans[k.replace(' — ', ' - ')] = v;
+        } else if (k.includes(' - ')) {
+          normalizedPlans[k.replace(' - ', ' — ')] = v;
+        }
+      }
+      return {
+        allTasks: fileData.allTasks || [],
+        defaultPlans: normalizedPlans,
+        customModelPlans: fileData.customModelPlans || {}
+      };
+    }
+  } catch (_) {}
+
+  return { allTasks: [], defaultPlans: {}, customModelPlans: {} };
 }
 
 async function updateMaintenancePlans(plansData) {

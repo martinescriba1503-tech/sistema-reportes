@@ -215,6 +215,14 @@ class IndustracApp {
         body: JSON.stringify({ email, password })
       });
 
+      if (res.status === 403) {
+        if (errBox) {
+          errBox.textContent = 'Acceso bloqueado (HTTP 403): La protección de Vercel ("Deployment Protection / Vercel Authentication") está activa en este enlace o la sesión de Vercel expiró. En el panel de Vercel ve a Settings > Deployment Protection y desactiva "Require Log In".';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await res.text();
@@ -737,7 +745,7 @@ class IndustracApp {
       this.loadClients();
       this.loadEquipments();
     } else if (tabId === 'tab-plans') {
-      this.renderPlansView();
+      this.loadPlans();
     } else if (tabId === 'tab-horometers') {
       this.loadHorometersData();
     }
@@ -817,17 +825,171 @@ class IndustracApp {
   }
 
   // --- DATA LOADING & PLANS ---
+  getDefaultFallbackPlans() {
+    return {
+      allTasks: [
+        { id: 'filtro_aceite', name: '1 Filtro de Aceite', category: 'Filtros' },
+        { id: 'filtro_aire', name: '1 Filtro de Aire', category: 'Filtros' },
+        { id: 'filtro_separador', name: '1 Filtro Separador', category: 'Filtros' },
+        { id: 'cambio_aceite', name: 'Aceite Roto Xtend (5 L / 20 L)', category: 'Lubricación' },
+        { id: 'valvula_termostatica', name: 'Kit de válvula termostática', category: 'Válvulas' },
+        { id: 'valvula_minima_presion', name: 'Kit de válvula de mínima presión', category: 'Válvulas' },
+        { id: 'kits_drenaje_ld20', name: 'Kits de drenaje LD20', category: 'Drenajes' },
+        { id: 'valvula_admision', name: 'Mantenimiento de válvula de admisión', category: 'Válvulas' },
+        { id: 'valvula_check', name: 'Mantenimiento de válvula check', category: 'Válvulas' },
+        { id: 'valvula_oilstop', name: 'Mantenimiento de válvula oilstop', category: 'Válvulas' },
+        { id: 'trampa_agua', name: 'Mantenimiento de trampa de agua', category: 'Drenajes' },
+        { id: 'check_barrido', name: 'Cambio de check de barrido', category: 'Líneas' },
+        { id: 'limpieza_enfriador', name: 'Limpieza de enfriador', category: 'Refrigeración' },
+        { id: 'lavado_quimico_enfriador', name: 'Lavado químico de enfriador', category: 'Refrigeración' },
+        { id: 'ajuste_tablero', name: 'Ajuste de tablero eléctrico', category: 'Eléctrico' },
+        { id: 'otros_trabajos', name: 'Otros trabajos', category: 'General' }
+      ],
+      defaultPlans: {
+        'Plan A — 2000 horas': {
+          name: 'Plan A — 2000 horas',
+          hours: 2000,
+          group: 'Grupo 1 (2.000 / 4.000 / 8.000 h)',
+          cycleType: 'ciclo_2000',
+          description: 'Mantenimiento preventivo de 2.000 horas: Reemplazo de filtros primarios de aceite y admisión.',
+          autoLoadItems: ['1 Filtro de Aceite', '1 Filtro de Aire'],
+          suggestedTasks: ['filtro_aceite', 'filtro_aire']
+        },
+        'Plan B — 4000 horas': {
+          name: 'Plan B — 4000 horas',
+          hours: 4000,
+          group: 'Grupo 1 (2.000 / 4.000 / 8.000 h)',
+          cycleType: 'ciclo_2000',
+          description: 'Mantenimiento intermedio de 4.000 horas: Filtración completa y cambio de lubricante sintético.',
+          oilType: 'Roto Xtend (20 L)',
+          oilPresentations: ['5 L', '20 L'],
+          autoLoadItems: [
+            '1 Filtro de Aceite',
+            '1 Filtro de Aire',
+            '1 Filtro Separador',
+            'Aceite Roto Xtend, con presentaciones de 5 L y 20 L'
+          ],
+          suggestedTasks: ['filtro_aceite', 'filtro_aire', 'filtro_separador', 'cambio_aceite']
+        },
+        'Plan C — 8000 horas': {
+          name: 'Plan C — 8000 horas',
+          hours: 8000,
+          group: 'Grupo 1 (2.000 / 4.000 / 8.000 h)',
+          cycleType: 'ciclo_2000',
+          description: 'Mantenimiento integral mayor de 8.000 horas: Filtración total, lubricante y reemplazo preventivo de kits de válvulas y drenajes.',
+          oilType: 'Roto Xtend (20 L)',
+          oilPresentations: ['5 L', '20 L'],
+          autoLoadItems: [
+            '1 Filtro de Aceite',
+            '1 Filtro de Aire',
+            '1 Filtro Separador',
+            'Aceite Roto Xtend, con presentaciones de 5 L y 20 L',
+            'Kit de válvula termostática',
+            'Kit de válvula de mínima presión',
+            'Kits de drenaje LD20'
+          ],
+          suggestedTasks: [
+            'filtro_aceite',
+            'filtro_aire',
+            'filtro_separador',
+            'cambio_aceite',
+            'valvula_termostatica',
+            'valvula_minima_presion',
+            'kits_drenaje_ld20'
+          ]
+        },
+        'Plan A — 3000 horas': {
+          name: 'Plan A — 3000 horas',
+          hours: 3000,
+          group: 'Grupo 2 (3.000 / 6.000 / 12.000 h)',
+          cycleType: 'ciclo_3000',
+          description: 'Mantenimiento preventivo de 3.000 horas: Reemplazo de filtros de aceite y admisión.',
+          autoLoadItems: ['1 Filtro de Aceite', '1 Filtro de Aire'],
+          suggestedTasks: ['filtro_aceite', 'filtro_aire']
+        },
+        'Plan B — 6000 horas': {
+          name: 'Plan B — 6000 horas',
+          hours: 6000,
+          group: 'Grupo 2 (3.000 / 6.000 / 12.000 h)',
+          cycleType: 'ciclo_3000',
+          description: 'Mantenimiento intermedio de 6.000 horas: Filtración completa y cambio de lubricante sintético.',
+          oilType: 'Sigma 5GAL',
+          oilPresentations: ['1 GAL', '5 GAL'],
+          autoLoadItems: [
+            '1 Filtro de Aceite',
+            '1 Filtro de Aire',
+            '1 Filtro Separador',
+            'Aceite Sigma 5GAL'
+          ],
+          suggestedTasks: ['filtro_aceite', 'filtro_aire', 'filtro_separador', 'cambio_aceite']
+        },
+        'Plan C — 12000 horas': {
+          name: 'Plan C — 12000 horas',
+          hours: 12000,
+          group: 'Grupo 2 (3.000 / 6.000 / 12.000 h)',
+          cycleType: 'ciclo_3000',
+          description: 'Mantenimiento mayor de 12.000 horas: Filtración total, lubricante y reemplazo de kits de válvulas operativas y drenaje.',
+          oilType: 'Sigma 5GAL',
+          oilPresentations: ['1 GAL', '5 GAL'],
+          autoLoadItems: [
+            '1 Filtro de Aceite',
+            '1 Filtro de Aire',
+            '1 Filtro Separador',
+            'Aceite Sigma 5GAL',
+            'Kit de válvula termostática',
+            'Kit de válvula de mínima presión',
+            'Kits de drenaje LD20'
+          ],
+          suggestedTasks: [
+            'filtro_aceite',
+            'filtro_aire',
+            'filtro_separador',
+            'cambio_aceite',
+            'valvula_termostatica',
+            'valvula_minima_presion',
+            'kits_drenaje_ld20'
+          ]
+        }
+      },
+      customModelPlans: {}
+    };
+  }
+
   async loadPlans() {
     try {
       const res = await this.fetchWithAuth('/api/plans');
-      this.plans = await res.json();
+      if (!res.ok) {
+        throw new Error(`Respuesta no exitosa del servidor (HTTP ${res.status})`);
+      }
+      const data = await res.json();
+      if (data && data.defaultPlans && Object.keys(data.defaultPlans).length > 0) {
+        this.plans = data;
+        try {
+          localStorage.setItem('industrac_cached_plans', JSON.stringify(data));
+        } catch (_) {}
+      } else {
+        throw new Error('Datos de planes incompletos recibidos del servidor');
+      }
+    } catch (err) {
+      console.warn('Aviso: usando respaldo de planes para continuidad operativa:', err.message);
+      if (!this.plans || !this.plans.defaultPlans || Object.keys(this.plans.defaultPlans).length === 0) {
+        try {
+          const cached = localStorage.getItem('industrac_cached_plans');
+          if (cached) {
+            this.plans = JSON.parse(cached);
+          }
+        } catch (_) {}
+      }
+      if (!this.plans || !this.plans.defaultPlans || Object.keys(this.plans.defaultPlans).length === 0) {
+        this.plans = this.getDefaultFallbackPlans();
+      }
+    } finally {
       this.renderPlansView();
       this.renderMechanicalTasksList();
       this.suggestMechanicalTasks(this.reportData.maintenanceType);
       this.renderAutoLoadedPartsBox(this.reportData.maintenanceType);
-    } catch (err) {
-      console.warn('Error cargando planes del servidor:', err);
     }
+  }
   }
 
   // --- PERSISTENCIA LOCAL Y ANTI-BORRADO EN RECARGAS ---
@@ -3822,10 +3984,32 @@ class IndustracApp {
     const group2Keys = ['Plan A — 3000 horas', 'Plan B — 6000 horas', 'Plan C — 12000 horas'];
 
     const getPlan = (planKey) => {
-      return defaultPlans[planKey] ||
-        defaultPlans[planKey.replace(' — ', ' - ')] ||
-        defaultPlans[planKey.replace(' - ', ' — ')] ||
-        {};
+      if (!defaultPlans) return {};
+      // 1. Coincidencia directa
+      if (defaultPlans[planKey]) return defaultPlans[planKey];
+      // 2. Normalización de guiones (- vs —)
+      const withDash = planKey.replace(' — ', ' - ');
+      if (defaultPlans[withDash]) return defaultPlans[withDash];
+      const withEmDash = planKey.replace(' - ', ' — ');
+      if (defaultPlans[withEmDash]) return defaultPlans[withEmDash];
+
+      // 3. Normalización flexible por número de horas e identificador de plan
+      const extractHours = (str) => {
+        if (!str) return null;
+        const m = String(str).match(/(\d+[\d.,]*)/);
+        if (!m) return null;
+        return parseInt(m[1].replace(/[.,]/g, ''), 10);
+      };
+      const targetHours = extractHours(planKey);
+
+      for (const [k, p] of Object.entries(defaultPlans)) {
+        if (!p) continue;
+        const pHours = p.hours || extractHours(k) || extractHours(p.name);
+        if (targetHours && pHours === targetHours) {
+          return p;
+        }
+      }
+      return {};
     };
 
     const renderCard = (planKey) => {
