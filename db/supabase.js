@@ -240,7 +240,11 @@ function toDbReport(rep) {
     controller: rep.controller || '',
     pressure: rep.pressure || '',
     airflow: rep.airflow || '',
-    hour_meter: Number(rep.hourMeter || 0),
+    hour_meter: (() => {
+      if (rep.hourMeter === undefined || rep.hourMeter === null || rep.hourMeter === '') return 0;
+      const parsed = parseFloat(String(rep.hourMeter).replace(/,/g, '').trim());
+      return isNaN(parsed) ? 0 : parsed;
+    })(),
     oil_type: rep.oilType || '',
     oil_quantities: rep.oilQuantities || {},
     oil_level: rep.oilLevel || '',
@@ -515,9 +519,72 @@ async function getReportById(id) {
   return toReport(data, false);
 }
 
+
+// Sanitiza y resuelve un equipment_id válido que realmente exista en public.equipments
+// Evita errores de clave foránea (violates foreign key constraint reports_equipment_id_fkey)
+async function resolveValidEquipmentId(sb, rep) {
+  const rawId = rep.equipmentId || rep.equipment_id;
+  if (rawId && String(rawId).trim()) {
+    const cleanId = String(rawId).trim();
+    const { data: eq } = await sb
+      .from('equipments')
+      .select('id')
+      .eq('id', cleanId)
+      .maybeSingle();
+    if (eq && eq.id) {
+      return eq.id;
+    }
+  }
+
+  const sn = (rep.serialNumber || rep.serial_number || '').trim();
+  if (sn) {
+    const { data: eqBySn } = await sb
+      .from('equipments')
+      .select('id')
+      .ilike('serial_number', sn)
+      .maybeSingle();
+    if (eqBySn && eqBySn.id) {
+      return eqBySn.id;
+    }
+  }
+
+  const client = (rep.client || '').trim();
+  const model = (rep.model || '').trim();
+  if (client && model) {
+    const { data: eqByModel } = await sb
+      .from('equipments')
+      .select('id')
+      .ilike('client', client)
+      .ilike('model', model)
+      .maybeSingle();
+    if (eqByModel && eqByModel.id) {
+      return eqByModel.id;
+    }
+  }
+
+  return null;
+}
+
+async function getReportByNumber(reportNumber) {
+  if (!reportNumber) return null;
+  const sb = getClientOrThrow();
+  const { data, error } = await sb
+    .from('reports')
+    .select('*')
+    .eq('report_number', String(reportNumber).trim())
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
+  }
+  return data ? toReport(data, false) : null;
+}
+
 async function createReport(reportData) {
   const sb = getClientOrThrow();
-  const row = toDbReport(reportData);
+  const validEquipmentId = await resolveValidEquipmentId(sb, reportData);
+  const row = toDbReport({ ...reportData, equipmentId: validEquipmentId });
   const { data, error } = await sb
     .from('reports')
     .insert([row])
@@ -530,7 +597,8 @@ async function createReport(reportData) {
 
 async function updateReport(id, reportData) {
   const sb = getClientOrThrow();
-  const row = toDbReport({ ...reportData, id });
+  const validEquipmentId = await resolveValidEquipmentId(sb, reportData);
+  const row = toDbReport({ ...reportData, id, equipmentId: validEquipmentId });
   const { data, error } = await sb
     .from('reports')
     .update(row)
@@ -576,15 +644,39 @@ async function updateReportDriveUrls(id, pdfDriveUrl, pdfDriveDownloadUrl) {
 
 async function getNextReportNumber(peekOnly = false) {
   const sb = getClientOrThrow();
-  const { data, error } = await sb.rpc('generate_next_report_number', {
-    peek_only: Boolean(peekOnly)
-  });
-
-  if (error) {
-    console.error('[Supabase RPC] Error al generar correlativo:', error.message);
-    throw error;
+  if (peekOnly) {
+    const { data, error } = await sb.rpc('generate_next_report_number', {
+      peek_only: true
+    });
+    if (error) {
+      console.error('[Supabase RPC] Error al consultar correlativo:', error.message);
+      throw error;
+    }
+    return data;
   }
-  return data;
+
+  let attempts = 0;
+  while (attempts < 50) {
+    attempts++;
+    const { data, error } = await sb.rpc('generate_next_report_number', {
+      peek_only: false
+    });
+    if (error) {
+      console.error('[Supabase RPC] Error al generar correlativo:', error.message);
+      throw error;
+    }
+
+    const { data: existing } = await sb
+      .from('reports')
+      .select('id')
+      .eq('report_number', data)
+      .maybeSingle();
+
+    if (!existing) {
+      return data;
+    }
+    console.warn(`[Supabase RPC] El correlativo ${data} ya existe en reports. Consumiendo el siguiente...`);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -705,6 +797,7 @@ module.exports = {
   addEquipmentReading,
   deleteEquipmentReading,
   getReports,
+  getReportByNumber,
   getReportById,
   createReport,
   updateReport,

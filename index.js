@@ -880,23 +880,48 @@ app.post('/api/reports', authorizeWrite, async (req, res) => {
       return res.status(400).json({ error: 'El nombre del cliente es obligatorio para registrar un reporte.' });
     }
 
-    // Idempotencia: Si ya existe un reporte con ese ID o número, actualizarlo
+    // 1. Idempotencia: Si ya existe un reporte con ese ID, actualizarlo directamente
     if (reportData.id) {
       const existing = await db.getReportById(reportData.id);
       if (existing) {
         const updated = await db.updateReport(reportData.id, reportData);
         let horometerUpdate = null;
         if (updated.status === 'Finalizado') {
-          horometerUpdate = await applyReportToEquipmentHorometer(updated);
+          try {
+            horometerUpdate = await applyReportToEquipmentHorometer(updated);
+          } catch (eHoro) {
+            console.warn('[Reports] Aviso al actualizar horómetro:', eHoro.message);
+          }
         }
         return res.status(200).json({ ...updated, horometerUpdate, idempotent: true });
       }
     }
 
-    // Si el número de reporte no viene definido o es un placeholder, generar el correlativo oficial consumiéndolo
+    // 2. Gestión atómica del número de reporte: evitar colisiones de correlativo
     let reportNumber = (reportData.reportNumber || '').trim();
     if (!reportNumber || reportNumber === 'AUTO' || reportNumber.startsWith('REP-2026-...')) {
       reportNumber = await db.getNextReportNumber(false);
+    } else {
+      // Verificar si este número ya existe en Supabase
+      const existingWithNum = await db.getReportByNumber(reportNumber);
+      if (existingWithNum) {
+        if (!reportData.id || reportData.id === existingWithNum.id) {
+          // Es el mismo reporte, actualizarlo
+          const updated = await db.updateReport(existingWithNum.id, { ...reportData, id: existingWithNum.id });
+          let horometerUpdate = null;
+          if (updated.status === 'Finalizado') {
+            try {
+              horometerUpdate = await applyReportToEquipmentHorometer(updated);
+            } catch (eHoro) {
+              console.warn('[Reports] Aviso al actualizar horómetro:', eHoro.message);
+            }
+          }
+          return res.status(200).json({ ...updated, horometerUpdate, idempotent: true });
+        } else {
+          // El número pertenece a otro reporte; generar uno nuevo único oficial
+          reportNumber = await db.getNextReportNumber(false);
+        }
+      }
     }
 
     const newReport = {
@@ -909,7 +934,11 @@ app.post('/api/reports', authorizeWrite, async (req, res) => {
     const saved = await db.createReport(newReport);
     let horometerUpdate = null;
     if (saved.status === 'Finalizado') {
-      horometerUpdate = await applyReportToEquipmentHorometer(saved);
+      try {
+        horometerUpdate = await applyReportToEquipmentHorometer(saved);
+      } catch (eHoro) {
+        console.warn('[Reports] Aviso al actualizar horómetro:', eHoro.message);
+      }
     }
 
     res.status(201).json({ ...saved, horometerUpdate });
@@ -923,13 +952,44 @@ app.put('/api/reports/:id', authorizeWrite, async (req, res) => {
   try {
     const existing = await db.getReportById(req.params.id);
     if (!existing) {
-      return res.status(404).json({ error: 'Reporte no encontrado en la base de datos.' });
+      // Si el reporte no existe (ej. borrador local), crearlo de forma segura
+      let reportNumber = (req.body.reportNumber || '').trim();
+      if (!reportNumber || reportNumber === 'AUTO' || reportNumber.startsWith('REP-2026-...')) {
+        reportNumber = await db.getNextReportNumber(false);
+      } else {
+        const existingWithNum = await db.getReportByNumber(reportNumber);
+        if (existingWithNum && existingWithNum.id !== req.params.id) {
+          reportNumber = await db.getNextReportNumber(false);
+        }
+      }
+
+      const created = await db.createReport({
+        ...req.body,
+        id: req.params.id,
+        reportNumber,
+        status: req.body.status || 'Finalizado'
+      });
+
+      let horometerUpdate = null;
+      if (created.status === 'Finalizado') {
+        try {
+          horometerUpdate = await applyReportToEquipmentHorometer(created);
+        } catch (eHoro) {
+          console.warn('[Reports] Aviso al actualizar horómetro:', eHoro.message);
+        }
+      }
+
+      return res.status(201).json({ ...created, horometerUpdate });
     }
 
     const updated = await db.updateReport(req.params.id, req.body);
     let horometerUpdate = null;
     if (updated.status === 'Finalizado') {
-      horometerUpdate = await applyReportToEquipmentHorometer(updated);
+      try {
+        horometerUpdate = await applyReportToEquipmentHorometer(updated);
+      } catch (eHoro) {
+        console.warn('[Reports] Aviso al actualizar horómetro:', eHoro.message);
+      }
     }
 
     res.json({ ...updated, horometerUpdate });

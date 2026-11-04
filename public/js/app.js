@@ -2653,6 +2653,14 @@ class IndustracApp {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.reportData)
         });
+        if (res.status === 404) {
+          // Si el ID del borrador no existe aún en el backend, enviar vía POST
+          res = await this.fetchWithAuth('/api/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.reportData)
+          });
+        }
       } else {
         res = await this.fetchWithAuth('/api/reports', {
           method: 'POST',
@@ -2662,7 +2670,8 @@ class IndustracApp {
       }
 
       if (!res.ok) {
-        throw new Error(`El servidor respondió con código HTTP ${res.status}`);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `El servidor respondió con código HTTP ${res.status}`);
       }
 
       savedReport = await res.json();
