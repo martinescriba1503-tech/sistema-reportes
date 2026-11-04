@@ -759,8 +759,22 @@ class IndustracApp {
 
     // Validation checks when moving forward
     if (stepNumber > this.currentStep) {
-      if (this.currentStep === 1 && !this.reportData.client) {
-        this.showToast('Por favor ingrese al menos el nombre del Cliente.', 'warning');
+      if (this.currentStep === 1) {
+        if (!this.reportData.client) {
+          this.showToast('Por favor ingrese al menos el nombre del Cliente.', 'warning');
+          return;
+        }
+        const rawHours = String(this.reportData.hourMeter || '').trim();
+        if (!rawHours || isNaN(Number(rawHours)) || Number(rawHours) < 0) {
+          this.showToast('El Horómetro Total es obligatorio. Por favor ingrese las horas actuales del equipo.', 'error');
+          const hInput = document.getElementById('field-hourmeter');
+          if (hInput) {
+            hInput.focus();
+            hInput.classList.add('input-error');
+            setTimeout(() => hInput.classList.remove('input-error'), 3000);
+          }
+          return;
+        }
       }
     }
 
@@ -1463,9 +1477,8 @@ class IndustracApp {
     const eqHours = (eq.hourMeter && eq.hourMeter !== 'Pendiente de completar' && eq.hourMeter !== '0')
       ? eq.hourMeter
       : (eq.hours && eq.hours > 0 ? String(eq.hours) : '');
-    if (eqHours) {
-      this.reportData.hourMeter = eqHours;
-    }
+    // El horómetro debe dejarse en blanco para que el personal registre las horas actuales en sitio
+    this.reportData.hourMeter = '';
 
     if (eq.hasDryer) {
       this.reportData.hasDryer = true;
@@ -1507,8 +1520,9 @@ class IndustracApp {
     const idField = document.getElementById('field-equipment-id');
     if (idField) idField.value = eq.id;
     const hourmeterField = document.getElementById('field-hourmeter');
-    if (hourmeterField && this.reportData.hourMeter) {
-      hourmeterField.value = this.reportData.hourMeter;
+    if (hourmeterField) {
+      hourmeterField.value = '';
+      hourmeterField.placeholder = eqHours ? `Último registro: ${Number(eqHours).toLocaleString()} hrs (ingrese actual)` : 'Ingrese horómetro actual...';
     }
 
     const tag = document.getElementById('equipment-selected-tag');
@@ -1521,7 +1535,7 @@ class IndustracApp {
     }
 
     this.suggestMechanicalTasks(this.reportData.maintenanceType, eq.model);
-    this.handleHoursAutocomplete(this.reportData.maintenanceType || eq.hourMeter, false);
+    this.handleHoursAutocomplete(this.reportData.maintenanceType, false);
     this.showToast(`Datos vinculados: ${eq.model} [${apiCodeVal || 'DEMO'}] (${eq.client})`, 'success');
     this.triggerAutoSave();
   }

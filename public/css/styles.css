@@ -3488,3 +3488,17 @@ input:checked + .slider:before {
 
 
 
+
+/* Estilo visual para campos obligatorios no completados */
+.input-error {
+  border-color: #EF4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25) !important;
+  background-color: #FEF2F2 !important;
+  animation: shakeInput 0.3s ease-in-out;
+}
+
+@keyframes shakeInput {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
